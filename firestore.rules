@@ -39,7 +39,7 @@ service cloud.firestore {
 
     // User collection: Users can only see/edit their own data, Admins can see/create staff in their restaurant
     match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || (isAdmin() && resource.data.restaurantId == getRestaurantId()));
+      allow read: if isSignedIn() && request.auth.uid == userId;
       allow create: if isSignedIn(); 
       allow update: if isSignedIn() && (request.auth.uid == userId || (isAdmin() && resource.data.restaurantId == getRestaurantId()));
     }
@@ -93,8 +93,8 @@ service cloud.firestore {
 
     // Daily Collections & Receipt Counters
     match /daily_collections/{docId} {
-      allow read: if isSignedIn() && (belongsToRestaurant(resource.data) || docId.startsWith(getRestaurantId() + "_"));
-      allow write: if isSignedIn() && (isAdmin() || isCashier()) && (request.resource.data.restaurantId == getRestaurantId() || docId.startsWith(getRestaurantId() + "_"));
+      allow read: if isSignedIn() && (belongsToRestaurant(resource.data) || docId.matches('^' + getRestaurantId() + '_.*$'));
+      allow write: if isSignedIn() && (isAdmin() || isCashier()) && (request.resource.data.restaurantId == getRestaurantId() || docId.matches('^' + getRestaurantId() + '_.*$'));
     }
     match /receipt_counters/{resId} {
       allow read, write: if isSignedIn() && resId == getRestaurantId();

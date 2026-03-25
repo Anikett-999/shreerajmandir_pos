@@ -186,7 +186,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         children: [
                           Icon(Icons.restaurant, size: 48, color: theme.primaryColor),
                           const SizedBox(height: 10),
-                          Text("LDMA POS", style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
+                          Text("ShreeRajmandir", style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
                         ],
                       ),
                     ),
@@ -286,7 +286,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         children: [
                           if (_isExtended)
                             const Expanded(
-                              child: Text("LDMA POS", 
+                              child: Text("ShreeRajmandir", 
                                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF800000)),
                                 overflow: TextOverflow.ellipsis,
                               ),

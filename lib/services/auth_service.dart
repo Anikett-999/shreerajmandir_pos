@@ -44,29 +44,33 @@ class AuthService extends ChangeNotifier {
     _savedPin = prefs.getString('waiter_pin');
     
     _auth.authStateChanges().listen((user) async {
-      _isLoading = false;
-      if (user == null) {
-        _isUnlocked = false;
-        _restaurantId = null;
-        _stopSessionTimer();
-      } else {
-        // Logged in but we need to check if they need PIN
-        if (_savedPin == null) {
-          final doc = await _firestore.collection('users').doc(user.uid).get();
-          String roleStr = doc.data()?['role'] ?? 'waiter';
-          _role = _getRoleFromString(roleStr);
-          _restaurantId = doc.data()?['restaurantId'];
-          
-          if (_restaurantId != null) {
-            final resDoc = await _firestore.collection('restaurants').doc(_restaurantId).get();
-            _restaurantName = resDoc.data()?['name'];
-          }
-          
-          _isUnlocked = true;
-          _startSessionTimer();
+      try {
+        _isLoading = false;
+        if (user == null) {
+          _isUnlocked = false;
+          _restaurantId = null;
+          _stopSessionTimer();
         } else {
-          _isUnlocked = false; // Must enter PIN
+          if (_savedPin == null) {
+            final doc = await _firestore.collection('users').doc(user.uid).get();
+            String roleStr = doc.data()?['role'] ?? 'waiter';
+            _role = _getRoleFromString(roleStr);
+            _restaurantId = doc.data()?['restaurantId'];
+
+            if (_restaurantId != null) {
+              final resDoc = await _firestore.collection('restaurants').doc(_restaurantId).get();
+              _restaurantName = resDoc.data()?['name'];
+            }
+
+            _isUnlocked = true;
+            _startSessionTimer();
+          } else {
+            _isUnlocked = false;
+          }
         }
+      } catch (_) {
+        _isUnlocked = false;
+        _stopSessionTimer();
       }
       notifyListeners();
     });
@@ -114,7 +118,9 @@ class AuthService extends ChangeNotifier {
       notifyListeners();
       return null;
     } on FirebaseAuthException catch (e) {
-      return e.message;
+      return '[${e.code}] ${e.message ?? 'Authentication error'}';
+    } on FirebaseException catch (e) {
+      return '[${e.code}] ${e.message ?? 'Firebase operation failed'}';
     } catch (e) {
       return e.toString();
     }
@@ -144,7 +150,9 @@ class AuthService extends ChangeNotifier {
       notifyListeners();
       return null;
     } on FirebaseAuthException catch (e) {
-      return e.message;
+      return '[${e.code}] ${e.message ?? 'Authentication error'}';
+    } on FirebaseException catch (e) {
+      return '[${e.code}] ${e.message ?? 'Firebase operation failed'}';
     } catch (e) {
       return e.toString();
     }
@@ -236,7 +244,9 @@ class AuthService extends ChangeNotifier {
       await secondaryAuth.signOut();
       return null;
     } on FirebaseAuthException catch (e) {
-      return e.message;
+      return '[${e.code}] ${e.message ?? 'Authentication error'}';
+    } on FirebaseException catch (e) {
+      return '[${e.code}] ${e.message ?? 'Firebase operation failed'}';
     } catch (e) {
       return e.toString();
     } finally {

@@ -96,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       const Icon(Icons.restaurant_menu, size: 64, color: Color(0xFF800000)),
                       const SizedBox(height: 16),
-                      const Text("LDMA POS LOGIN", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                      const Text("ShreeRajmandir LOGIN", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                       const SizedBox(height: 32),
                       _buildFormContent(auth, usePinMode),
                     ],

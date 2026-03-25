@@ -1,1 +1,24 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"ldma-pos","appId":"1:881474789496:android:dbca9cf1eb10f731784d8d","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"ldma-pos","configurations":{"android":"1:881474789496:android:dbca9cf1eb10f731784d8d","web":"1:881474789496:web:846382cfc4061170784d8d","windows":"1:881474789496:web:7ff3cfae8054242b784d8d"}}}}}}
+{
+	"firestore": {
+		"rules": "firestore.rules"
+	},
+	"flutter": {
+		"platforms": {
+			"android": {
+				"default": {
+					"projectId": "shreerajmandir-820c7",
+					"appId": "1:668168532890:android:8232661a4a50188e3dc023",
+					"fileOutput": "android/app/google-services.json"
+				}
+			},
+			"dart": {
+				"lib/firebase_options.dart": {
+					"projectId": "shreerajmandir-820c7",
+					"configurations": {
+						"android": "1:668168532890:android:8232661a4a50188e3dc023"
+					}
+				}
+			}
+		}
+	}
+}
