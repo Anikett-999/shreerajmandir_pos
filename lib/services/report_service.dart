@@ -32,14 +32,14 @@ class ReportService {
 
   // ── DAILY COLLECTION REPORT (A4) ─────────────────────────────────────────
   static Future<void> generateDailyCollectionReport(
-      DateTime date, List<QueryDocumentSnapshot> orders, {String restaurantName = "LDMA POS"}) async {
+      DateTime date, List<QueryDocumentSnapshot> orders, {String restaurantName = "ShreeRajmandir"}) async {
     final dateStr = DateFormat('dd MMM yyyy').format(date);
     await generatePeriodReport("Daily Collection Report", "Date: $dateStr", orders, restaurantName: restaurantName);
   }
 
   // ── GENERAL PERIOD REPORT (A4) ───────────────────────────────────────────
   static Future<void> generatePeriodReport(
-      String title, String periodInfo, List<QueryDocumentSnapshot> orders, {String restaurantName = "LDMA POS"}) async {
+      String title, String periodInfo, List<QueryDocumentSnapshot> orders, {String restaurantName = "ShreeRajmandir"}) async {
     final pdf = pw.Document();
     final total =
         orders.fold<double>(0, (sum, doc) => sum + (doc['totalAmount'] ?? 0));
@@ -151,7 +151,7 @@ class ReportService {
 
   // ── ORDER RECEIPT (waiter copy) ──────────────────────────────────────────
   static Future<void> printOrderReceipt(
-      Map<String, dynamic> data, String orderId, {String restaurantName = "LDMA POS"}) async {
+      Map<String, dynamic> data, String orderId, {String restaurantName = "ShreeRajmandir"}) async {
     final pdf = pw.Document();
     final items = data['items'] as List;
     final date =
@@ -248,8 +248,8 @@ class ReportService {
     required double sgst,
     required double total,
     required String paymentMode,
-    String hotelName = "LDMA RESTAURANT",
-    String address = "123 Food Street, City",
+    String hotelName = "ShreeRajmandir",
+    String address = "Adarsh Colony, Ausa Rd, Latur, Maharashtra 413512",
     String gstin = "GSTIN: 27AAAAA0000A1Z5",
   }) async {
     final pdf = pw.Document();
@@ -381,7 +381,7 @@ class ReportService {
                   style: pw.TextStyle(
                       fontStyle: pw.FontStyle.italic, fontSize: 7))),
           pw.Center(
-              child: pw.Text("LDMA POS Softwares",
+              child: pw.Text("Powered by ShreeRajmandir",
                   style: const pw.TextStyle(fontSize: 6))),
           pw.SizedBox(height: 10),
         ],

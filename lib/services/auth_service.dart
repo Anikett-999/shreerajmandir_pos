@@ -40,33 +40,47 @@ class AuthService extends ChangeNotifier {
   Future<void> _init() async {
     _isLoading = true;
     notifyListeners();
+
+    const firstLaunchCompletedKey = 'first_launch_completed';
     final prefs = await SharedPreferences.getInstance();
-    _savedPin = prefs.getString('waiter_pin');
+    _savedPin = prefs.getString('staff_pin');
+
+    final firstLaunchCompleted = prefs.getBool(firstLaunchCompletedKey) ?? false;
+    if (!firstLaunchCompleted) {
+      if (_auth.currentUser != null) {
+        await _auth.signOut();
+      }
+      await prefs.setBool(firstLaunchCompletedKey, true);
+    }
     
     _auth.authStateChanges().listen((user) async {
-      _isLoading = false;
-      if (user == null) {
-        _isUnlocked = false;
-        _restaurantId = null;
-        _stopSessionTimer();
-      } else {
-        // Logged in but we need to check if they need PIN
-        if (_savedPin == null) {
-          final doc = await _firestore.collection('users').doc(user.uid).get();
-          String roleStr = doc.data()?['role'] ?? 'waiter';
-          _role = _getRoleFromString(roleStr);
-          _restaurantId = doc.data()?['restaurantId'];
-          
-          if (_restaurantId != null) {
-            final resDoc = await _firestore.collection('restaurants').doc(_restaurantId).get();
-            _restaurantName = resDoc.data()?['name'];
-          }
-          
-          _isUnlocked = true;
-          _startSessionTimer();
+      try {
+        _isLoading = false;
+        if (user == null) {
+          _isUnlocked = false;
+          _restaurantId = null;
+          _stopSessionTimer();
         } else {
-          _isUnlocked = false; // Must enter PIN
+          if (_savedPin == null) {
+            final doc = await _firestore.collection('users').doc(user.uid).get();
+            String roleStr = doc.data()?['role'] ?? 'waiter';
+            _role = _getRoleFromString(roleStr);
+            _restaurantId = doc.data()?['restaurantId'];
+
+            if (_restaurantId != null) {
+              final resDoc = await _firestore.collection('restaurants').doc(_restaurantId).get();
+              _restaurantName = resDoc.data()?['name'];
+            }
+
+            _isUnlocked = true;
+            _startSessionTimer();
+          } else {
+            _isUnlocked = false;
+          }
         }
+      } catch (_) {
+        _isUnlocked = false;
+        _stopSessionTimer();
       }
       notifyListeners();
     });
@@ -78,45 +92,6 @@ class AuthService extends ChangeNotifier {
       case 'cashier': return UserRole.cashier;
       case 'waiter': return UserRole.waiter;
       default: return UserRole.waiter;
-    }
-  }
-
-  Future<String?> registerWithEmail({
-    required String email, 
-    required String password, 
-    required String name, 
-    required String restaurantName,
-    String role = 'admin',
-  }) async {
-    try {
-      final credential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
-      
-      // Create Restaurant
-      final restaurantDoc = await _firestore.collection('restaurants').add({
-        'name': restaurantName,
-        'createdAt': FieldValue.serverTimestamp(),
-        'adminUid': credential.user!.uid,
-      });
-
-      await _firestore.collection('users').doc(credential.user!.uid).set({
-        'email': email,
-        'name': name,
-        'role': role,
-        'restaurantId': restaurantDoc.id,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      
-      _role = _getRoleFromString(role);
-      _restaurantId = restaurantDoc.id;
-      _restaurantName = restaurantName;
-      _isUnlocked = true;
-      _startSessionTimer();
-      notifyListeners();
-      return null;
-    } on FirebaseAuthException catch (e) {
-      return e.message;
-    } catch (e) {
-      return e.toString();
     }
   }
 
@@ -144,9 +119,26 @@ class AuthService extends ChangeNotifier {
       notifyListeners();
       return null;
     } on FirebaseAuthException catch (e) {
-      return e.message;
+      switch (e.code) {
+        case 'invalid-email':
+          return 'Please enter a valid email address.';
+        case 'user-disabled':
+          return 'This account has been disabled. Contact manager.';
+        case 'user-not-found':
+        case 'wrong-password':
+        case 'invalid-credential':
+          return 'Incorrect email or password.';
+        case 'too-many-requests':
+          return 'Too many attempts. Please wait and try again.';
+        case 'network-request-failed':
+          return 'No internet connection. Please check your network.';
+        default:
+          return 'Login failed. Please try again.';
+      }
+    } on FirebaseException catch (e) {
+      return 'Login failed due to a server issue. Please try again.';
     } catch (e) {
-      return e.toString();
+      return 'Something went wrong. Please try again.';
     }
   }
 
@@ -162,14 +154,14 @@ class AuthService extends ChangeNotifier {
 
   Future<void> savePin(String pin) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('waiter_pin', pin);
+    await prefs.setString('staff_pin', pin);
     _savedPin = pin;
     notifyListeners();
   }
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('waiter_pin');
+    await prefs.remove('staff_pin');
     _savedPin = null;
     _isUnlocked = false;
     _role = UserRole.none;
@@ -236,7 +228,9 @@ class AuthService extends ChangeNotifier {
       await secondaryAuth.signOut();
       return null;
     } on FirebaseAuthException catch (e) {
-      return e.message;
+      return '[${e.code}] ${e.message ?? 'Authentication error'}';
+    } on FirebaseException catch (e) {
+      return '[${e.code}] ${e.message ?? 'Firebase operation failed'}';
     } catch (e) {
       return e.toString();
     } finally {
@@ -250,8 +244,62 @@ class AuthService extends ChangeNotifier {
     });
   }
 
-  Future<void> sendResetEmail(String email) async {
-    await _auth.sendPasswordResetEmail(email: email);
+  Future<String?> sendResetEmail(String email) async {
+    final trimmedEmail = email.trim();
+
+    FirebaseApp? secondaryApp;
+    try {
+      secondaryApp = await Firebase.initializeApp(
+        name: 'ResetCheck_${DateTime.now().millisecondsSinceEpoch}',
+        options: Firebase.app().options,
+      );
+
+      final probeAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+      final probePassword = '___invalid_probe_password___';
+
+      bool emailLooksValidAndExisting = false;
+      try {
+        final credential = await probeAuth.signInWithEmailAndPassword(
+          email: trimmedEmail,
+          password: probePassword,
+        );
+        if (credential.user != null) {
+          emailLooksValidAndExisting = true;
+          await probeAuth.signOut();
+        }
+      } on FirebaseAuthException catch (probeError) {
+        if (probeError.code == 'user-not-found') {
+          return 'Email not found. Please check and try again.';
+        }
+
+        if (probeError.code == 'wrong-password' ||
+            probeError.code == 'invalid-credential') {
+          emailLooksValidAndExisting = true;
+        } else if (probeError.code == 'invalid-email') {
+          return 'Enter a valid email address.';
+        } else {
+          return '[${probeError.code}] ${probeError.message ?? 'Authentication error'}';
+        }
+      }
+
+      if (!emailLooksValidAndExisting) {
+        return 'Unable to verify this email. Please check and try again.';
+      }
+
+      await _auth.sendPasswordResetEmail(email: trimmedEmail);
+      return null;
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found') {
+        return 'Email not found. Please check and try again.';
+      }
+      return '[${e.code}] ${e.message ?? 'Authentication error'}';
+    } on FirebaseException catch (e) {
+      return '[${e.code}] ${e.message ?? 'Firebase operation failed'}';
+    } catch (e) {
+      return e.toString();
+    } finally {
+      await secondaryApp?.delete();
+    }
   }
 
   void userActivityDetected() {

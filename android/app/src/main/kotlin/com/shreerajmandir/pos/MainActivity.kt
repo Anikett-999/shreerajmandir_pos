@@ -1,4 +1,4 @@
-package com.example.yug_pos
+package com.shreerajmandir.pos
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yug_pos/models/menu_item.dart';
-import 'package:yug_pos/providers/cart_provider.dart';
+import 'package:shreerajmandir/models/menu_item.dart';
+import 'package:shreerajmandir/providers/cart_provider.dart';
 
 void main() {
   group('Cart Provider Unit Tests', () {

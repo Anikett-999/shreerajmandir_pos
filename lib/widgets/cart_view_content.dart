@@ -166,7 +166,7 @@ class _CartViewContentState extends State<CartViewContent> {
 
       final auth = context.read<AuthService>();
       final restaurantId = auth.restaurantId;
-      final restaurantName = auth.restaurantName ?? "LDMA POS";
+      final restaurantName = auth.restaurantName ?? "ShreeRajmandir";
 
       if (tableDoc.exists && tableDoc.data()?['currentOrderId'] != null) {
         orderId = tableDoc.data()!['currentOrderId'];

@@ -17,21 +17,21 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      return web;
+      throw UnsupportedError(
+        'DefaultFirebaseOptions have not been configured for web - '
+        'configure this app with FlutterFire CLI for web support.',
+      );
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        return ios;
       case TargetPlatform.macOS:
-        return macos;
       case TargetPlatform.windows:
-        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
+          'DefaultFirebaseOptions have not been configured for this platform - '
+          'configure this app with FlutterFire CLI for full multi-platform support.',
         );
       default:
         throw UnsupportedError(
@@ -40,50 +40,12 @@ class DefaultFirebaseOptions {
     }
   }
 
-  static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBo49QOZeqakwO6Tq3ZZ5HcD014hxnrb4c',
-    appId: '1:881474789496:web:846382cfc4061170784d8d',
-    messagingSenderId: '881474789496',
-    projectId: 'ldma-pos',
-    authDomain: 'ldma-pos.firebaseapp.com',
-    storageBucket: 'ldma-pos.firebasestorage.app',
-    measurementId: 'G-RX5FR9MKXS',
-  );
-
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDi5GKQw4EN850C-hc8Esrgjyf-TS_iDlQ',
-    appId: '1:881474789496:android:dbca9cf1eb10f731784d8d',
-    messagingSenderId: '881474789496',
-    projectId: 'ldma-pos',
-    storageBucket: 'ldma-pos.firebasestorage.app',
-  );
-
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyA_dummy_key_ios',
-    appId: '1:1234567890:ios:12abc',
-    messagingSenderId: '1234567890',
-    projectId: 'ldma-pos-dummy',
-    storageBucket: 'ldma-pos-dummy.appspot.com',
-    iosBundleId: 'com.example.yugPos',
-  );
-
-  static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyA_dummy_key_macos',
-    appId: '1:1234567890:ios:12abc',
-    messagingSenderId: '1234567890',
-    projectId: 'ldma-pos-dummy',
-    storageBucket: 'ldma-pos-dummy.appspot.com',
-    iosBundleId: 'com.example.yugPos',
-  );
-
-  static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyBo49QOZeqakwO6Tq3ZZ5HcD014hxnrb4c',
-    appId: '1:881474789496:web:7ff3cfae8054242b784d8d',
-    messagingSenderId: '881474789496',
-    projectId: 'ldma-pos',
-    authDomain: 'ldma-pos.firebaseapp.com',
-    storageBucket: 'ldma-pos.firebasestorage.app',
-    measurementId: 'G-Z71RRX8C74',
+    apiKey: 'AIzaSyDMmkZaysmTxMMCczETf9l1g0oTadS7v7M',
+    appId: '1:668168532890:android:8232661a4a50188e3dc023',
+    messagingSenderId: '668168532890',
+    projectId: 'shreerajmandir-820c7',
+    storageBucket: 'shreerajmandir-820c7.firebasestorage.app',
   );
 
 }

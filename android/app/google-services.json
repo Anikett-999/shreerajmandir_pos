@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "668168532890",
+    "project_id": "shreerajmandir-820c7",
+    "storage_bucket": "shreerajmandir-820c7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:668168532890:android:8232661a4a50188e3dc023",
+        "android_client_info": {
+          "package_name": "com.shreerajmandir.pos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDMmkZaysmTxMMCczETf9l1g0oTadS7v7M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

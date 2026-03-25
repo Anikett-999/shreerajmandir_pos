@@ -694,7 +694,7 @@ class _AdminOrderDialogState extends State<AdminOrderDialog> {
 
   void _submitOrder() async {
      final auth = context.read<AuthService>();
-     final adminName = auth.role == UserRole.admin ? "Admin (${auth.currentUser?.email ?? 'Unknown'})" : "Admin";
+    final adminName = auth.role == UserRole.admin ? "Admin (${auth.currentUser?.email ?? 'Unknown'})" : "Admin";
      final total = _selectedItems.fold<double>(0, (sum, i) => sum + (i.item.price * i.quantity));
 
      final firestore = FirebaseFirestore.instance;

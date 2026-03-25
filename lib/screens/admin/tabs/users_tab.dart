@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/staff_seed_service.dart';
 
 class UsersTab extends StatelessWidget {
   const UsersTab({super.key});
@@ -51,6 +52,15 @@ class UsersTab extends StatelessWidget {
                             ),
                           ),
                         ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _seedDefaultUsers(context),
+                            icon: const Icon(Icons.bolt, size: 18),
+                            label: const Text("Seed Test Users"),
+                          ),
+                        ),
                       ],
                     )
                   else
@@ -59,14 +69,24 @@ class UsersTab extends StatelessWidget {
                       children: [
                         Text("Staff Management", 
                           style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                        ElevatedButton.icon(
-                          onPressed: () => _showAddUserDialog(context),
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text("Create Staff Member"),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => _seedDefaultUsers(context),
+                              icon: const Icon(Icons.bolt, size: 18),
+                              label: const Text("Seed Test Users"),
+                            ),
+                            const SizedBox(width: 12),
+                            ElevatedButton.icon(
+                              onPressed: () => _showAddUserDialog(context),
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text("Create Staff Member"),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -259,10 +279,21 @@ class UsersTab extends StatelessWidget {
     if (role == 'admin') color = Colors.purple;
     if (role == 'cashier') color = Colors.orange;
 
+    String displayRole;
+    if (role == 'admin') {
+      displayRole = 'Admin';
+    } else if (role == 'cashier') {
+      displayRole = 'Cashier';
+    } else if (role == 'waiter') {
+      displayRole = 'Waiter';
+    } else {
+      displayRole = role;
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-      child: Text(role.toUpperCase(), style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+      child: Text(displayRole.toUpperCase(), style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
     );
   }
 
@@ -284,8 +315,69 @@ class UsersTab extends StatelessWidget {
   }
 
   void _sendResetEmail(BuildContext context, String email) async {
-    await context.read<AuthService>().sendResetEmail(email);
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Reset email sent!")));
+    final error = await context.read<AuthService>().sendResetEmail(email);
+    if (!context.mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Reset email sent! Please ask user to check spam folder too.")),
+    );
+  }
+
+  Future<void> _seedDefaultUsers(BuildContext context) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+            SizedBox(width: 12),
+            Text('Seeding test users...'),
+          ],
+        ),
+      ),
+    );
+
+    final auth = context.read<AuthService>();
+    final result = await StaffSeedService().seedDefaultUsers(auth);
+
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    final summary = 'Seed complete: created ${result.created}, skipped ${result.skipped}, failed ${result.failed}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(summary),
+        backgroundColor: result.failed > 0 ? Colors.orange : Colors.green,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+
+    if (result.errors.isNotEmpty) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Seed Errors'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Text(result.errors.join('\n')),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 }
 
@@ -330,7 +422,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text("Register New Staff Member"),
+      title: const Text("Create New Staff Member"),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       content: SingleChildScrollView(
         child: Column(
@@ -343,7 +435,10 @@ class _AddUserDialogState extends State<AddUserDialog> {
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               value: _selectedRole,
-              items: ['waiter', 'cashier', 'admin'].map((r) => DropdownMenuItem(value: r, child: Text(r.toUpperCase()))).toList(),
+              items: ['waiter', 'cashier', 'admin'].map((r) {
+                final label = r == 'waiter' ? 'Waiter' : r == 'cashier' ? 'Cashier' : 'Admin';
+                return DropdownMenuItem(value: r, child: Text(label));
+              }).toList(),
               onChanged: (v) => setState(() => _selectedRole = v!),
               decoration: const InputDecoration(labelText: "Assign Role"),
             ),

@@ -446,7 +446,7 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
 
   void _submitOrder() async {
      final auth = context.read<AuthService>();
-     final waiterDisplayName = auth.role == UserRole.admin ? "Admin (${auth.currentUser?.email?.split('@')[0] ?? 'Admin'})" : "Cashier";
+    final waiterDisplayName = auth.role == UserRole.admin ? "Admin (${auth.currentUser?.email?.split('@')[0] ?? 'Admin'})" : "Cashier";
      final total = _selectedItems.fold<double>(0, (sum, i) => sum + (i.item.price * i.quantity));
 
      final firestore = FirebaseFirestore.instance;

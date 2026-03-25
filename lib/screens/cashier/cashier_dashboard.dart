@@ -28,7 +28,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
   Widget build(BuildContext context) {
     final auth = context.read<AuthService>();
     final restaurantId = auth.restaurantId;
-    final restaurantName = auth.restaurantName ?? "LDMA POS";
+    final restaurantName = auth.restaurantName ?? "ShreeRajmandir";
     final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Scaffold(
@@ -1032,7 +1032,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
     if (change > 0) {
       // Logic from 4.3.2: "Any modification auto-generates a new KOT for the added items"
       final restaurantId = context.read<AuthService>().restaurantId;
-      final restaurantName = context.read<AuthService>().restaurantName ?? "LDMA POS";
+      final restaurantName = context.read<AuthService>().restaurantName ?? "ShreeRajmandir";
       
       final kotData = {
         'tableName': orderData['tableName'],
@@ -1237,7 +1237,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
     try {
       final auth = context.read<AuthService>();
       final restaurantId = auth.restaurantId;
-      final restaurantName = auth.restaurantName ?? "LDMA POS";
+      final restaurantName = auth.restaurantName ?? "ShreeRajmandir";
       
       final orderRef = _firestore.collection('orders').doc(table.currentOrderId);
       final tableRef = _firestore.collection('tables').doc(table.id);
