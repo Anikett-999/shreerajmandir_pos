@@ -3,11 +3,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/auth_service.dart';
+import '../services/debug_logger.dart';
 import '../models/table_model.dart';
 import '../models/menu_item.dart';
 import '../providers/cart_provider.dart';
 import '../services/report_service.dart';
 import '../utils/debouncer.dart';
+import '../utils/order_status_utils.dart';
+import '../utils/table_state_sync.dart';
 
 class CommonOrderDialog extends StatefulWidget {
   final TableModel table;
@@ -23,6 +26,39 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
   final TextEditingController _searchController = TextEditingController();
   final List<CartItem> _selectedItems = [];
   final Debouncer _debouncer = Debouncer(milliseconds: 1000);
+
+  Future<bool> _isOrderLockedForBilling({required String attemptedAction}) async {
+    final orderId = widget.table.currentOrderId;
+    if (orderId == null) return false;
+
+    final orderSnapshot = await FirebaseFirestore.instance.collection('orders').doc(orderId).get();
+    if (!orderSnapshot.exists) return false;
+
+    final status = (orderSnapshot.data()?['status'] ?? '').toString();
+    if (status != 'bill_requested') return false;
+
+    final auth = context.read<AuthService>();
+    DebugLogger.logEvent(
+      event: 'blocked_action_bill_requested',
+      data: {
+        'userRole': auth.role.name,
+        'userId': auth.currentUser?.uid,
+        'tableId': widget.table.id,
+        'orderId': orderId,
+        'lockedBy': null,
+        'attemptedAction': attemptedAction,
+        'previousState': status,
+        'newState': status,
+      },
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order is locked for billing')),
+      );
+    }
+    return true;
+  }
 
   @override
   void dispose() {
@@ -498,6 +534,11 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
   }
 
   void _submitOrder() async {
+     final isLocked = await _isOrderLockedForBilling(attemptedAction: 'send_kot');
+     if (isLocked) {
+       return;
+     }
+
      final auth = context.read<AuthService>();
     final waiterDisplayName = auth.role == UserRole.admin ? "Admin (${auth.currentUser?.email?.split('@')[0] ?? 'Admin'})" : "Cashier";
      final total = _selectedItems.fold<double>(0, (sum, i) => sum + (i.item.price * i.quantity));
@@ -510,7 +551,7 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
         'tableId': widget.table.id,
         'tableName': widget.table.name,
         'waiterName': waiterDisplayName,
-        'status': 'open',
+        'status': 'active',
         'restaurantId': auth.restaurantId,
         'createdAt': FieldValue.serverTimestamp(),
         'totalAmount': total,
@@ -553,13 +594,53 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
         }).toList(),
      });
 
-     final tableRef = firestore.collection('tables').doc(widget.table.id);
-     batch.update(tableRef, {
-        'status': TableStatus.occupied.name,
-        'currentOrderId': orderRef.id,
-     });
+     // Ensure table state follows the new order state (active -> occupied)
+     await TableStateSync.syncTableForOrderChange(
+       firestore: firestore,
+       tableId: widget.table.id,
+       orderId: orderRef.id,
+       orderState: 'active',
+       auth: auth,
+       batch: batch,
+     );
 
      await batch.commit();
+
+     OrderStatusUtils.logActiveStatusWrite(
+       auth: auth,
+       orderId: orderRef.id,
+       tableId: widget.table.id,
+       previousState: 'none',
+       source: 'shared_order_dialog.create_order',
+     );
+
+     DebugLogger.logEvent(
+       event: 'order_created',
+       data: {
+         'userRole': auth.role.name,
+         'userId': auth.currentUser?.uid,
+         'tableId': widget.table.id,
+         'orderId': orderRef.id,
+         'lockedBy': null,
+         'previousState': 'none',
+         'newState': 'active',
+         'itemCount': _selectedItems.length,
+       },
+     );
+
+     DebugLogger.logEvent(
+       event: 'items_added',
+       data: {
+         'userRole': auth.role.name,
+         'userId': auth.currentUser?.uid,
+         'tableId': widget.table.id,
+         'orderId': orderRef.id,
+         'lockedBy': null,
+          'previousState': null,
+          'newState': null,
+         'itemCount': _selectedItems.length,
+       },
+     );
 
      final kotData = {
         'tableName': widget.table.name,
@@ -571,6 +652,20 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
      };
      
      await ReportService.printKOTReceipt(kotData, orderRef.id);
+
+     DebugLogger.logEvent(
+       event: 'kot_sent',
+       data: {
+         'userRole': auth.role.name,
+         'userId': auth.currentUser?.uid,
+         'tableId': widget.table.id,
+         'orderId': orderRef.id,
+         'lockedBy': null,
+         'previousState': 'active',
+         'newState': 'active',
+          'orderProgress': 'kot_sent',
+       },
+     );
 
      if (mounted) {
        Navigator.pop(context);

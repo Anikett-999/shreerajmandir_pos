@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 
 import '../../../services/auth_service.dart';
+import '../../../utils/order_status_utils.dart';
 
 class UsersTab extends StatelessWidget {
   const UsersTab({super.key});
@@ -108,13 +109,17 @@ class UsersTab extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       itemCount: users.length,
       separatorBuilder: (context, index) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
+        itemBuilder: (context, index) {
         final doc = users[index];
         final data = doc.data() as Map<String, dynamic>;
         final role = (data['role'] ?? 'waiter').toString();
         final status = (data['status'] ?? 'active').toString();
         final name = (data['name'] ?? 'N/A').toString();
         final email = (data['email'] ?? 'N/A').toString();
+        final normalizedStatus = OrderStatusUtils.normalizeOrderStatusForRead(
+          rawStatus: status,
+          auth: context.read<AuthService>(),
+        );
 
         return Material(
           color: Colors.transparent,
@@ -185,14 +190,14 @@ class UsersTab extends StatelessWidget {
                             ),
                             IconButton(
                               icon: Icon(
-                                status == 'active' ? Icons.block : Icons.check_circle_outline,
+                                normalizedStatus == 'active' ? Icons.block : Icons.check_circle_outline,
                                 size: 20,
-                                color: status == 'active' ? Colors.red : Colors.green,
+                                color: normalizedStatus == 'active' ? Colors.red : Colors.green,
                               ),
                               onPressed: status == 'deleted'
                                   ? null
-                                  : () => _toggleUserStatus(context, doc.id, status == 'active'),
-                              tooltip: status == 'active' ? 'Disable User' : 'Enable User',
+                                  : () => _toggleUserStatus(context, doc.id, normalizedStatus == 'active'),
+                              tooltip: normalizedStatus == 'active' ? 'Disable User' : 'Enable User',
                               constraints: const BoxConstraints(),
                               padding: const EdgeInsets.all(8),
                             ),
@@ -247,6 +252,10 @@ class UsersTab extends StatelessWidget {
                 final data = doc.data() as Map<String, dynamic>;
                 final role = (data['role'] ?? 'waiter').toString();
                 final status = (data['status'] ?? 'active').toString();
+                final normalizedStatus = OrderStatusUtils.normalizeOrderStatusForRead(
+                  rawStatus: status,
+                  auth: context.read<AuthService>(),
+                );
                 final name = (data['name'] ?? 'N/A').toString();
                 final email = (data['email'] ?? 'N/A').toString();
                 final phone = (data['phone'] ?? '-').toString();
@@ -258,7 +267,7 @@ class UsersTab extends StatelessWidget {
                     DataCell(Text(email, style: TextStyle(color: Colors.grey.shade600))),
                     DataCell(Text(phone, style: TextStyle(color: Colors.grey.shade700))),
                     DataCell(_buildRoleChip(role)),
-                    DataCell(_buildStatusChip(status)),
+                    DataCell(_buildStatusChip(normalizedStatus)),
                     DataCell(Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -269,19 +278,19 @@ class UsersTab extends StatelessWidget {
                         ),
                         IconButton(
                           icon: const Icon(Icons.mail_outline, size: 20, color: Colors.blue),
-                          onPressed: status == 'deleted' ? null : () => _sendResetEmail(context, email),
+                          onPressed: normalizedStatus == 'deleted' ? null : () => _sendResetEmail(context, email),
                           tooltip: 'Reset Password',
                         ),
                         IconButton(
                           icon: Icon(
-                            status == 'active' ? Icons.block : Icons.check_circle_outline,
+                            normalizedStatus == 'active' ? Icons.block : Icons.check_circle_outline,
                             size: 20,
-                            color: status == 'active' ? Colors.red : Colors.green,
+                            color: normalizedStatus == 'active' ? Colors.red : Colors.green,
                           ),
-                          onPressed: status == 'deleted'
+                          onPressed: normalizedStatus == 'deleted'
                               ? null
-                              : () => _toggleUserStatus(context, doc.id, status == 'active'),
-                          tooltip: status == 'active' ? 'Disable User' : 'Enable User',
+                              : () => _toggleUserStatus(context, doc.id, normalizedStatus == 'active'),
+                          tooltip: normalizedStatus == 'active' ? 'Disable User' : 'Enable User',
                         ),
                       ],
                     )),
@@ -318,6 +327,7 @@ class UsersTab extends StatelessWidget {
     Color color = Colors.blue;
     if (role == 'admin') color = Colors.purple;
     if (role == 'cashier') color = Colors.orange;
+    if (role == 'kitchen') color = Colors.teal;
 
     String displayRole;
     if (role == 'admin') {
@@ -326,6 +336,8 @@ class UsersTab extends StatelessWidget {
       displayRole = 'Cashier';
     } else if (role == 'waiter') {
       displayRole = 'Waiter';
+    } else if (role == 'kitchen') {
+      displayRole = 'Kitchen';
     } else {
       displayRole = role;
     }
@@ -621,6 +633,13 @@ class _AddOrEditUserDialogState extends State<AddOrEditUserDialog> {
 
     setState(() => _loading = true);
     final auth = context.read<AuthService>();
+    if (auth.restaurantId == null || auth.restaurantId!.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot create user: admin has no restaurant context.')), 
+      );
+      return;
+    }
 
     try {
       if (widget.isEdit) {
@@ -734,8 +753,14 @@ class _AddOrEditUserDialogState extends State<AddOrEditUserDialog> {
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 initialValue: _selectedRole,
-                items: ['waiter', 'cashier', 'admin'].map((r) {
-                  final label = r == 'waiter' ? 'Waiter' : r == 'cashier' ? 'Cashier' : 'Admin';
+                items: ['waiter', 'cashier', 'kitchen', 'admin'].map((r) {
+                  final label = r == 'waiter'
+                      ? 'Waiter'
+                      : r == 'cashier'
+                          ? 'Cashier'
+                          : r == 'kitchen'
+                              ? 'Kitchen'
+                              : 'Admin';
                   return DropdownMenuItem(value: r, child: Text(label));
                 }).toList(),
                 onChanged: (v) => setState(() => _selectedRole = v ?? 'waiter'),

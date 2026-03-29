@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum UserRole { waiter, admin, cashier, none }
+enum UserRole { waiter, admin, cashier, kitchen, none }
 
 class AuthService extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -107,6 +107,8 @@ class AuthService extends ChangeNotifier {
     switch (roleStr) {
       case 'admin': return UserRole.admin;
       case 'cashier': return UserRole.cashier;
+      case 'kitchen': return UserRole.kitchen;
+      case 'chef': return UserRole.kitchen;
       case 'waiter': return UserRole.waiter;
       default: return UserRole.waiter;
     }
@@ -229,6 +231,9 @@ class AuthService extends ChangeNotifier {
     required String role,
     String? phone,
   }) async {
+    if (_restaurantId == null || _restaurantId!.isEmpty) {
+      return 'Unable to create staff: admin account has no restaurant context. Please ensure you are logged in to a restaurant admin account.';
+    }
     FirebaseApp? secondaryApp;
     try {
       // Initialize a temporary secondary app to create the user

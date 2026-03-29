@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../services/auth_service.dart';
+import '../../../utils/order_status_utils.dart';
 import 'package:provider/provider.dart';
 
 class RevenueTab extends StatefulWidget {
@@ -98,7 +99,13 @@ class _RevenueTabState extends State<RevenueTab> {
                   if (createdAt.isBefore(startOfYesterday)) continue;
 
                   final amount = (data['totalAmount'] ?? 0).toDouble();
-                  final status = data['status'] ?? 'open';
+                  final status = OrderStatusUtils.normalizeOrderStatusForRead(
+                    rawStatus: data['status'] ?? 'active',
+                    auth: auth,
+                    orderId: doc.id,
+                    tableId: data['tableId']?.toString(),
+                    source: 'admin.revenue_tab',
+                  );
 
                   if (createdAt.isAfter(startOfDay)) {
                     if (status == 'cancelled') {

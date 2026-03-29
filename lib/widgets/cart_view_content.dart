@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
+import '../../services/debug_logger.dart';
 import '../../services/report_service.dart';
+import '../../utils/order_status_utils.dart';
+import '../../utils/table_state_sync.dart';
 import '../providers/cart_provider.dart';
 
 class CartViewContent extends StatefulWidget {
@@ -15,6 +18,40 @@ class CartViewContent extends StatefulWidget {
 
 class _CartViewContentState extends State<CartViewContent> {
   bool _isSubmitting = false;
+
+  Future<bool> _isOrderLockedForBilling({
+    required String orderId,
+    required String tableId,
+    required String attemptedAction,
+  }) async {
+    final orderSnapshot = await FirebaseFirestore.instance.collection('orders').doc(orderId).get();
+    if (!orderSnapshot.exists) return false;
+
+    final status = (orderSnapshot.data()?['status'] ?? '').toString();
+    if (status != 'bill_requested') return false;
+
+    final auth = context.read<AuthService>();
+    DebugLogger.logEvent(
+      event: 'blocked_action_bill_requested',
+      data: {
+        'userRole': auth.role.name,
+        'userId': auth.currentUser?.uid,
+        'tableId': tableId,
+        'orderId': orderId,
+        'lockedBy': null,
+        'attemptedAction': attemptedAction,
+        'previousState': status,
+        'newState': status,
+      },
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order is locked for billing')),
+      );
+    }
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -167,9 +204,23 @@ class _CartViewContentState extends State<CartViewContent> {
       final auth = context.read<AuthService>();
       final restaurantId = auth.restaurantId;
       final restaurantName = auth.restaurantName ?? "ShreeRajmandir";
+      final tableId = cart.tableId;
+      bool isOrderCreated = false;
 
       if (tableDoc.exists && tableDoc.data()?['currentOrderId'] != null) {
         orderId = tableDoc.data()!['currentOrderId'];
+        final isLocked = await _isOrderLockedForBilling(
+          orderId: orderId,
+          tableId: cart.tableId!,
+          attemptedAction: 'send_kot',
+        );
+        if (isLocked) {
+          if (mounted) {
+            setState(() => _isSubmitting = false);
+          }
+          return;
+        }
+
         final orderRef = firestore.collection('orders').doc(orderId);
         batch.update(orderRef, {
           'totalAmount': FieldValue.increment(cartTotal),
@@ -178,6 +229,7 @@ class _CartViewContentState extends State<CartViewContent> {
       } else {
         final orderRef = firestore.collection('orders').doc();
         orderId = orderRef.id;
+        isOrderCreated = true;
         batch.set(orderRef, {
           'tableId': cart.tableId,
           'tableName': (tableDoc.data() as Map<String, dynamic>)['name'] ?? 'Unknown',
@@ -188,10 +240,15 @@ class _CartViewContentState extends State<CartViewContent> {
           'totalAmount': cartTotal,
           'items': cartItemsSummary,
         });
-        batch.update(tableRef, {
-          'status': 'occupied',
-          'currentOrderId': orderId,
-        });
+        // Ensure table state follows order state (active -> occupied)
+        await TableStateSync.syncTableForOrderChange(
+          firestore: firestore,
+          tableId: tableId!,
+          orderId: orderId,
+          orderState: 'active',
+          auth: auth,
+          batch: batch,
+        );
       }
 
       final kotRef = firestore.collection('kots').doc();
@@ -233,6 +290,58 @@ class _CartViewContentState extends State<CartViewContent> {
       }
 
       await batch.commit();
+
+      // Table lock released after order/KOT created
+      DebugLogger.logEvent(
+        event: 'table_lock_released',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': tableId,
+          'previousLockedBy': null,
+          'newLockedBy': null,
+        },
+      );
+
+      if (isOrderCreated) {
+        OrderStatusUtils.logActiveStatusWrite(
+          auth: auth,
+          orderId: orderId,
+          tableId: tableId,
+          previousState: 'none',
+          source: 'waiter_cart.create_order',
+        );
+      }
+
+      if (isOrderCreated) {
+        DebugLogger.logEvent(
+          event: 'order_created',
+          data: {
+            'userRole': auth.role.name,
+            'userId': auth.currentUser?.uid,
+            'tableId': tableId,
+            'orderId': orderId,
+            'lockedBy': null,
+            'previousState': 'none',
+            'newState': 'active',
+            'itemCount': cart.items.length,
+          },
+        );
+      }
+
+      DebugLogger.logEvent(
+        event: 'items_added',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': tableId,
+          'orderId': orderId,
+          'lockedBy': null,
+          'previousState': null,
+          'newState': null,
+          'itemCount': cart.items.length,
+        },
+      );
       
       // Auto-Print KOT for Waiter
       final kotData = {
@@ -244,6 +353,21 @@ class _CartViewContentState extends State<CartViewContent> {
         }).toList(),
       };
       await ReportService.printKOTReceipt(kotData, orderId);
+
+      DebugLogger.logEvent(
+        event: 'kot_sent',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': tableId,
+          'orderId': orderId,
+          'lockedBy': null,
+          'previousState': 'active',
+          'newState': 'active',
+          'orderProgress': 'kot_sent',
+          'kotId': kotId,
+        },
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(

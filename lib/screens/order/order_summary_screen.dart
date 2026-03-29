@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
+import '../../services/debug_logger.dart';
 import '../../models/table_model.dart';
 import '../../utils/debouncer.dart';
 import 'menu_screen.dart';
@@ -182,9 +183,29 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
     );
 
     if (confirm == true) {
+      final auth = context.read<AuthService>();
+      final orderSnapshot = await _firestore.collection('orders').doc(widget.orderId).get();
+      final previousState = orderSnapshot.exists
+          ? ((orderSnapshot.data() as Map<String, dynamic>)['status'] ?? 'unknown').toString()
+          : 'unknown';
+
       await _firestore.collection('orders').doc(widget.orderId).update({
         'status': 'bill_requested',
       });
+
+      DebugLogger.logEvent(
+        event: 'bill_requested',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': widget.table.id,
+          'orderId': widget.orderId,
+          'lockedBy': null,
+          'previousState': previousState,
+          'newState': 'bill_requested',
+        },
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill requested successfully.')));
       }

@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../../../models/table_model.dart';
 import '../../../services/report_service.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/debug_logger.dart';
 import '../../../widgets/order_dialog.dart';
+import '../../../utils/table_state_sync.dart';
 
 class TablesTab extends StatefulWidget {
   const TablesTab({super.key});
@@ -174,6 +176,20 @@ class _TablesTabState extends State<TablesTab> {
                                 _buildUltraCompactButton("BILL", Icons.receipt_long, Colors.grey, () => _showBillPrintDialog(table)),
                               
                               _buildUltraCompactButton("ORDER", Icons.add_shopping_cart, Colors.green, () {
+                                final auth = context.read<AuthService>();
+                                DebugLogger.logEvent(
+                                  event: 'table_selected',
+                                  data: {
+                                    'userRole': auth.role.name,
+                                    'userId': auth.currentUser?.uid,
+                                    'tableId': table.id,
+                                    'orderId': table.currentOrderId,
+                                    'lockedBy': null,
+                                    'previousState': table.status.name,
+                                    'newState': table.status.name,
+                                  },
+                                );
+
                                 showDialog(
                                   context: context,
                                   barrierDismissible: false,
@@ -336,10 +352,35 @@ class _TablesTabState extends State<TablesTab> {
       }
 
       final orderData = orderDoc.data() as Map<String, dynamic>;
+      final auth = context.read<AuthService>();
+      final previousState = (orderData['status'] ?? 'unknown').toString();
       await ReportService.printOrderReceipt(orderData, orderDoc.id);
 
-      await _firestore.collection('tables').doc(table.id).update({'status': 'billRequested'});
-      await _firestore.collection('orders').doc(orderId).update({'status': 'bill_requested'});
+      final batch = _firestore.batch();
+      final orderRef = _firestore.collection('orders').doc(orderId);
+      batch.update(orderRef, {'status': 'bill_requested'});
+      await TableStateSync.syncTableForOrderChange(
+        firestore: _firestore,
+        tableId: table.id,
+        orderId: orderId,
+        orderState: 'bill_requested',
+        auth: auth,
+        batch: batch,
+      );
+      await batch.commit();
+
+      DebugLogger.logEvent(
+        event: 'bill_requested',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': table.id,
+          'orderId': orderId,
+          'lockedBy': null,
+          'previousState': previousState,
+          'newState': 'bill_requested',
+        },
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -471,24 +512,76 @@ class _TablesTabState extends State<TablesTab> {
 
   void _processClearTable(TableModel table, {bool printBill = false}) async {
     try {
+      final auth = context.read<AuthService>();
+      final previousTableState = table.status.name;
       String? orderId = table.currentOrderId;
       if (orderId != null) {
         final orderDoc = await _firestore.collection('orders').doc(orderId).get();
         if (orderDoc.exists) {
           final orderData = orderDoc.data() as Map<String, dynamic>;
+          final previousOrderState = (orderData['status'] ?? 'unknown').toString();
           if (printBill) await ReportService.printOrderReceipt(orderData, orderDoc.id);
           await _firestore.collection('orders').doc(orderId).update({
             'status': 'billed',
             'clearedAt': FieldValue.serverTimestamp(),
             'clearedBy': 'admin',
           });
+
+          DebugLogger.logEvent(
+            event: 'billing_completed',
+            data: {
+              'userRole': auth.role.name,
+              'userId': auth.currentUser?.uid,
+              'tableId': table.id,
+              'orderId': orderId,
+              'lockedBy': null,
+              'previousState': previousOrderState,
+              'newState': 'billed',
+            },
+          );
+
           final kots = await _firestore.collection('kots').where('orderId', isEqualTo: orderId).get();
           for (final kot in kots.docs) {
             await kot.reference.update({'status': 'Served', 'clearedAt': FieldValue.serverTimestamp()});
           }
         }
       }
-      await _firestore.collection('tables').doc(table.id).update({'status': TableStatus.available.name, 'currentOrderId': null});
+      // Use TableStateSync to ensure table state follows order state (billed -> available)
+      final batch2 = _firestore.batch();
+      await TableStateSync.syncTableForOrderChange(
+        firestore: _firestore,
+        tableId: table.id,
+        orderId: orderId ?? '',
+        orderState: 'billed',
+        auth: auth,
+        batch: batch2,
+      );
+      // Also clear any locks in the same batch
+      batch2.update(_firestore.collection('tables').doc(table.id), {'lockedBy': null, 'lockedAt': null});
+      await batch2.commit();
+
+      DebugLogger.logEvent(
+        event: 'table_cleared',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': table.id,
+          'orderId': orderId,
+          'lockedBy': null,
+          'previousState': previousTableState,
+          'newState': 'available',
+        },
+      );
+
+      DebugLogger.logEvent(
+        event: 'table_lock_released',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': table.id,
+          'orderId': orderId,
+        },
+      );
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
     }
@@ -572,15 +665,30 @@ class _TablesTabState extends State<TablesTab> {
               final data = {
                 'name': nameCtrl.text.trim(),
                 'capacity': int.tryParse(capCtrl.text) ?? 4,
-                'status': table?.status.name ?? TableStatus.available.name,
                 'restaurantId': restaurantId,
               };
 
               try {
+                final desiredStatus = table?.status.name ?? TableStatus.available.name;
                 if (table == null) {
-                  await _firestore.collection('tables').add(data);
+                  final docRef = await _firestore.collection('tables').add(data);
+                  // Apply requested status through TableStateSync (map desired table status to an orderState)
+                  await TableStateSync.syncTableForOrderChange(
+                    firestore: _firestore,
+                    tableId: docRef.id,
+                    orderId: '',
+                    orderState: _orderStateFromTableStatus(desiredStatus),
+                    auth: context.read<AuthService>(),
+                  );
                 } else {
                   await _firestore.collection('tables').doc(table.id).update(data);
+                  await TableStateSync.syncTableForOrderChange(
+                    firestore: _firestore,
+                    tableId: table.id,
+                    orderId: '',
+                    orderState: _orderStateFromTableStatus(desiredStatus),
+                    auth: context.read<AuthService>(),
+                  );
                 }
 
                 if (mounted) {
@@ -608,5 +716,20 @@ class _TablesTabState extends State<TablesTab> {
     final match = RegExp(r'\d+').firstMatch(value);
     if (match == null) return null;
     return int.tryParse(match.group(0)!);
+  }
+
+  /// Map a desired table status to a plausible orderState so we can reuse
+  /// TableStateSync for non-order-driven admin status changes.
+  String _orderStateFromTableStatus(String tableStatus) {
+    switch (tableStatus) {
+      case 'available':
+        return 'billed';
+      case 'billRequested':
+        return 'bill_requested';
+      case 'occupied':
+      case 'kotSent':
+      default:
+        return 'active';
+    }
   }
 }

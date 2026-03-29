@@ -48,7 +48,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             subtitle: 'Pick a date and generate day-wise business report',
             onTap: _isGenerating ? null : _onDailyPressed,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 12), 
           _buildReportTile(
             icon: Icons.date_range_outlined,
             title: 'Monthly Report',

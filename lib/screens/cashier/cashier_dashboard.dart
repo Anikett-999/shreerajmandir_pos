@@ -3,11 +3,15 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../services/auth_service.dart';
+import '../../services/debug_logger.dart';
+import '../auth/unauthorized_screen.dart';
 import '../../models/table_model.dart';
 import '../../services/report_service.dart';
 import '../../models/menu_item.dart';
 import '../../providers/cart_provider.dart';
 import '../../utils/debouncer.dart';
+import '../../utils/order_status_utils.dart';
+import '../../utils/table_state_sync.dart';
 import '../../widgets/order_dialog.dart';
 
 class CashierDashboard extends StatefulWidget {
@@ -23,11 +27,16 @@ class _CashierDashboardState extends State<CashierDashboard> {
   Map<String, dynamic>? _selectedOrderData;
   bool _hasCreatedTempTable = false; // Requirement 4.6
 
+  // Provide a convenient auth getter to avoid forward-reference issues
+  AuthService get auth => context.read<AuthService>();
+
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.read<AuthService>();
     final restaurantId = auth.restaurantId;
+    if (auth.role == UserRole.kitchen) {
+      return const UnauthorizedScreen();
+    }
     final restaurantName = auth.restaurantName ?? "ShreeRajmandir";
     final isMobile = MediaQuery.of(context).size.width < 600;
 
@@ -70,7 +79,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
               IconButton(icon: const Icon(Icons.settings), onPressed: () => _showManagementMenu(), tooltip: "Menu/Table Setup"),
               IconButton(icon: const Icon(Icons.refresh), onPressed: () => setState(() {}), tooltip: "Refresh Data"),
               const SizedBox(width: 8),
-              IconButton(icon: const Icon(Icons.logout), onPressed: () => context.read<AuthService>().logout(), tooltip: "Logout"),
+                    IconButton(icon: const Icon(Icons.logout), onPressed: () => auth.logout(), tooltip: "Logout"),
               const SizedBox(width: 16),
             ],
       ),
@@ -119,7 +128,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
               title: const Text('Logout', style: TextStyle(color: Colors.red)),
-              onTap: () => context.read<AuthService>().logout(),
+              onTap: () => auth.logout(),
             ),
           ],
         ),
@@ -201,7 +210,6 @@ class _CashierDashboardState extends State<CashierDashboard> {
   }
 
   Widget _buildCollectionCounter() {
-    final auth = context.read<AuthService>();
     final restaurantId = auth.restaurantId;
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final docId = "${restaurantId}_$today";
@@ -307,7 +315,20 @@ class _CashierDashboardState extends State<CashierDashboard> {
         ],
       ),
       child: InkWell(
-        onTap: () {
+          onTap: () {
+          DebugLogger.logEvent(
+            event: 'table_selected',
+            data: {
+              'userRole': auth.role.name,
+              'userId': auth.currentUser?.uid,
+              'tableId': table.id,
+              'orderId': table.currentOrderId,
+              'lockedBy': null,
+              'previousState': table.status.name,
+              'newState': table.status.name,
+            },
+          );
+
           if (table.currentOrderId != null) {
             _showOrderDetailPanel(table);
           } else {
@@ -344,11 +365,41 @@ class _CashierDashboardState extends State<CashierDashboard> {
                   
                   const SizedBox(height: 1),
                   if (isOccupied && table.status != TableStatus.billRequested)
-                    _buildUltraCompactButton("BILL", Icons.receipt_long, Colors.red, () {
-                       _firestore.collection('tables').doc(table.id).update({'status': 'billRequested'});
+                      _buildUltraCompactButton("BILL", Icons.receipt_long, Colors.red, () async {
+                       final orderSnapshot = table.currentOrderId != null
+                           ? await _firestore.collection('orders').doc(table.currentOrderId).get()
+                           : null;
+                       final previousState = orderSnapshot != null && orderSnapshot.exists
+                           ? ((orderSnapshot.data() as Map<String, dynamic>)['status'] ?? 'unknown').toString()
+                           : null;
+
+                       final batch = _firestore.batch();
                        if (table.currentOrderId != null) {
-                         _firestore.collection('orders').doc(table.currentOrderId).update({'status': 'bill_requested'});
+                         final orderRef = _firestore.collection('orders').doc(table.currentOrderId);
+                         batch.update(orderRef, {'status': 'bill_requested'});
                        }
+                       await TableStateSync.syncTableForOrderChange(
+                         firestore: _firestore,
+                         tableId: table.id,
+                         orderId: table.currentOrderId ?? '',
+                         orderState: 'bill_requested',
+                         auth: auth,
+                         batch: batch,
+                       );
+                       await batch.commit();
+
+                       DebugLogger.logEvent(
+                         event: 'bill_requested',
+                         data: {
+                           'userRole': auth.role.name,
+                           'userId': auth.currentUser?.uid,
+                           'tableId': table.id,
+                           'orderId': table.currentOrderId,
+                           'lockedBy': null,
+                           'previousState': previousState,
+                           'newState': 'bill_requested',
+                         },
+                       );
                     }),
                   
                   _buildUltraCompactButton(isOccupied ? "KOT" : "ORDER", isOccupied ? Icons.restaurant_menu : Icons.add_shopping_cart, isOccupied ? Colors.orange : const Color(0xFF800000), () {
@@ -566,7 +617,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
   }
 
   void _showSessionHistory() {
-    final restaurantId = context.read<AuthService>().restaurantId;
+    final restaurantId = auth.restaurantId;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -659,8 +710,8 @@ class _CashierDashboardState extends State<CashierDashboard> {
              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: "Item Name")),
              TextField(controller: priceCtrl, decoration: const InputDecoration(labelText: "Price"), keyboardType: TextInputType.number),
              StreamBuilder<QuerySnapshot>(
-               stream: _firestore.collection('categories')
-                   .where('restaurantId', isEqualTo: context.read<AuthService>().restaurantId)
+                 stream: _firestore.collection('categories')
+                   .where('restaurantId', isEqualTo: auth.restaurantId)
                    .snapshots(),
                builder: (context, snap) {
                  if (!snap.hasData) return const SizedBox();
@@ -705,13 +756,20 @@ class _CashierDashboardState extends State<CashierDashboard> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
           ElevatedButton(
             onPressed: () async {
-              if (nameCtrl.text.isNotEmpty) {
-                 await _firestore.collection('tables').add({
+                 if (nameCtrl.text.isNotEmpty) {
+                 final docRef = await _firestore.collection('tables').add({
                    'name': nameCtrl.text.trim(),
                    'capacity': 4,
-                   'status': 'available',
-                   'restaurantId': context.read<AuthService>().restaurantId,
+                   'restaurantId': auth.restaurantId,
                  });
+                 // Ensure table state is applied via TableStateSync
+                 await TableStateSync.syncTableForOrderChange(
+                   firestore: _firestore,
+                   tableId: docRef.id,
+                   orderId: '',
+                   orderState: 'billed', // maps to available
+                   auth: auth,
+                 );
                  setState(() => _hasCreatedTempTable = true);
                  if (mounted) Navigator.pop(context);
               }
@@ -755,7 +813,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
           height: 600,
           child: StreamBuilder<QuerySnapshot>(
             stream: _firestore.collection('orders')
-                .where('restaurantId', isEqualTo: context.read<AuthService>().restaurantId)
+              .where('restaurantId', isEqualTo: auth.restaurantId)
                 .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)))
                 .orderBy('createdAt', descending: true)
                 .snapshots(),
@@ -770,11 +828,17 @@ class _CashierDashboardState extends State<CashierDashboard> {
                   final doc = snapshot.data!.docs[index];
                   final data = doc.data() as Map<String, dynamic>;
                   final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
-                  final status = data['status'] ?? 'unknown';
-                  
+                  final normalizedStatus = OrderStatusUtils.normalizeOrderStatusForRead(
+                    rawStatus: data['status'] ?? 'unknown',
+                    auth: auth,
+                    orderId: doc.id,
+                    tableId: data['tableId']?.toString(),
+                    source: 'cashier.order_oversight',
+                  );
+
                   return ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: status == 'active' ? Colors.blue : (status == 'billed' ? Colors.green : Colors.grey),
+                      backgroundColor: normalizedStatus == 'active' ? Colors.blue : (normalizedStatus == 'billed' ? Colors.green : Colors.grey),
                       child: const Icon(Icons.receipt, color: Colors.white, size: 20),
                     ),
                     title: Text(
@@ -783,20 +847,20 @@ class _CashierDashboardState extends State<CashierDashboard> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     subtitle: Text(
-                      "₹${data['totalAmount'] ?? 0} • ${DateFormat('hh:mm a').format(createdAt)} • ${status.toUpperCase()}",
+                      "₹${data['totalAmount'] ?? 0} • ${DateFormat('hh:mm a').format(createdAt)} • ${normalizedStatus.toUpperCase()}",
                       style: const TextStyle(fontSize: 11),
                       overflow: TextOverflow.ellipsis,
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (status == 'billed')
+                        if (normalizedStatus == 'billed')
                           IconButton(
                             icon: const Icon(Icons.print, color: Colors.blue),
                             onPressed: () => _reprintBill(doc.id, data),
                             tooltip: "Reprint Bill",
                           ),
-                        if (status == 'active')
+                        if (normalizedStatus == 'active')
                           IconButton(
                             icon: const Icon(Icons.open_in_new, color: Colors.green),
                             onPressed: () async {
@@ -1009,6 +1073,33 @@ class _CashierDashboardState extends State<CashierDashboard> {
   }
 
   Future<void> _updateItemQuantity(String orderId, Map<String, dynamic> orderData, int index, int change) async {
+    
+    final orderSnapshot = await _firestore.collection('orders').doc(orderId).get();
+    final previousState = orderSnapshot.exists
+        ? ((orderSnapshot.data() as Map<String, dynamic>)['status'] ?? 'unknown').toString()
+        : null;
+    if (previousState == 'bill_requested') {
+      DebugLogger.logEvent(
+        event: 'blocked_action_bill_requested',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': orderData['tableId'],
+          'orderId': orderId,
+          'lockedBy': null,
+          'attemptedAction': change > 0 ? 'add_item' : 'update_quantity',
+          'previousState': previousState,
+          'newState': previousState,
+        },
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Order is locked for billing')),
+        );
+      }
+      return;
+    }
+
     final items = List<Map<String, dynamic>>.from(orderData['items']);
     final item = Map<String, dynamic>.from(items[index]);
     
@@ -1028,9 +1119,24 @@ class _CashierDashboardState extends State<CashierDashboard> {
     });
 
     if (change > 0) {
+      DebugLogger.logEvent(
+        event: 'items_added',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': orderData['tableId'],
+          'orderId': orderId,
+          'lockedBy': null,
+          'previousState': previousState,
+          'newState': previousState,
+          'itemName': item['name'],
+          'quantityDelta': change,
+        },
+      );
+
       // Logic from 4.3.2: "Any modification auto-generates a new KOT for the added items"
-      final restaurantId = context.read<AuthService>().restaurantId;
-      final restaurantName = context.read<AuthService>().restaurantName ?? "ShreeRajmandir";
+      final restaurantId = auth.restaurantId;
+      final restaurantName = auth.restaurantName ?? "ShreeRajmandir";
       
       final kotData = {
         'tableName': orderData['tableName'],
@@ -1055,6 +1161,20 @@ class _CashierDashboardState extends State<CashierDashboard> {
         'status': 'Pending',
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      DebugLogger.logEvent(
+        event: 'kot_sent',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': orderData['tableId'],
+          'orderId': orderId,
+          'lockedBy': null,
+          'previousState': previousState,
+          'newState': previousState,
+          'orderProgress': 'kot_sent',
+        },
+      );
     }
   }
 
@@ -1090,10 +1210,15 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 'cancelledAt': FieldValue.serverTimestamp(),
               });
 
-              batch.update(tableRef, {
-                'status': 'available',
-                'currentOrderId': null,
-              });
+              // Sync table to available as part of cancel flow
+              await TableStateSync.syncTableForOrderChange(
+                firestore: _firestore,
+                tableId: table.id,
+                orderId: table.currentOrderId ?? '',
+                orderState: 'cancelled',
+                auth: auth,
+                batch: batch,
+              );
 
               if (table.currentOrderId != null) {
                 final kotsSnap = await _firestore.collection('kots').where('orderId', isEqualTo: table.currentOrderId).get();
@@ -1103,6 +1228,18 @@ class _CashierDashboardState extends State<CashierDashboard> {
               }
 
               await batch.commit();
+              DebugLogger.logEvent(
+                event: 'table_cleared',
+                data: {
+                  'userRole': auth.role.name,
+                  'userId': auth.currentUser?.uid,
+                  'tableId': table.id,
+                  'orderId': table.currentOrderId,
+                  'lockedBy': null,
+                  'previousState': null,
+                  'newState': 'available',
+                },
+              );
 
               if (mounted) {
                 Navigator.pop(context); // Dialog
@@ -1129,10 +1266,15 @@ class _CashierDashboardState extends State<CashierDashboard> {
           OutlinedButton(
             onPressed: () async {
               final batch = _firestore.batch();
-              batch.update(_firestore.collection('tables').doc(table.id), {
-                'status': 'available',
-                'currentOrderId': null,
-              });
+              // Sync table to available as part of manual clear
+              await TableStateSync.syncTableForOrderChange(
+                firestore: _firestore,
+                tableId: table.id,
+                orderId: table.currentOrderId ?? '',
+                orderState: 'billed',
+                auth: auth,
+                batch: batch,
+              );
 
               if (table.currentOrderId != null) {
                 final kotsSnap = await _firestore.collection('kots').where('orderId', isEqualTo: table.currentOrderId).get();
@@ -1142,6 +1284,29 @@ class _CashierDashboardState extends State<CashierDashboard> {
               }
 
               await batch.commit();
+
+              DebugLogger.logEvent(
+                event: 'table_cleared',
+                data: {
+                  'userRole': auth.role.name,
+                  'userId': auth.currentUser?.uid,
+                  'tableId': table.id,
+                  'orderId': table.currentOrderId,
+                  'lockedBy': null,
+                  'previousState': null,
+                  'newState': 'available',
+                },
+              );
+
+              DebugLogger.logEvent(
+                event: 'table_lock_released',
+                data: {
+                  'userRole': auth.role.name,
+                  'userId': auth.currentUser?.uid,
+                  'tableId': table.id,
+                  'orderId': table.currentOrderId,
+                },
+              );
 
               if (mounted) {
                 Navigator.pop(context); // Dialog
@@ -1233,9 +1398,13 @@ class _CashierDashboardState extends State<CashierDashboard> {
 
   Future<void> _processBilling(TableModel table, Map<String, dynamic> orderData, double subtotal, double cgst, double sgst, double total, String paymentMode) async {
     try {
-      final auth = context.read<AuthService>();
       final restaurantId = auth.restaurantId;
       final restaurantName = auth.restaurantName ?? "ShreeRajmandir";
+        final previousOrderSnapshot = await _firestore.collection('orders').doc(table.currentOrderId).get();
+        final previousOrderState = previousOrderSnapshot.exists
+          ? ((previousOrderSnapshot.data() as Map<String, dynamic>)['status'] ?? 'unknown').toString()
+          : null;
+      final previousTableState = table.status.name;
       
       final orderRef = _firestore.collection('orders').doc(table.currentOrderId);
       final tableRef = _firestore.collection('tables').doc(table.id);
@@ -1264,10 +1433,15 @@ class _CashierDashboardState extends State<CashierDashboard> {
           'billedAt': FieldValue.serverTimestamp(),
         });
 
-        transaction.update(tableRef, {
-          'status': 'available',
-          'currentOrderId': null,
-        });
+        // Sync table state based on order state (billed -> available)
+        await TableStateSync.syncTableForOrderChange(
+          firestore: _firestore,
+          tableId: table.id,
+          orderId: table.currentOrderId ?? '',
+          orderState: 'billed',
+          auth: auth,
+          transaction: transaction,
+        );
 
         // Daily Collection Update logic
         transaction.set(collectionRef, {
@@ -1288,6 +1462,43 @@ class _CashierDashboardState extends State<CashierDashboard> {
           transaction.update(doc.reference, {'status': 'Served'});
         }
       });
+
+      DebugLogger.logEvent(
+        event: 'billing_completed',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': table.id,
+          'orderId': table.currentOrderId,
+          'lockedBy': null,
+          'previousState': previousOrderState,
+          'newState': 'billed',
+          'paymentMode': paymentMode,
+        },
+      );
+
+      DebugLogger.logEvent(
+        event: 'table_cleared',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': table.id,
+          'orderId': table.currentOrderId,
+          'lockedBy': null,
+          'previousState': previousTableState,
+          'newState': 'available',
+        },
+      );
+
+      DebugLogger.logEvent(
+        event: 'table_lock_released',
+        data: {
+          'userRole': auth.role.name,
+          'userId': auth.currentUser?.uid,
+          'tableId': table.id,
+          'orderId': table.currentOrderId,
+        },
+      );
 
       // Generate PDF & Print using the new proper Sequential Receipt Number
       final strReceiptNo = assignedReceiptNo.toString().padLeft(6, '0');
@@ -1352,7 +1563,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                   child: StreamBuilder<QuerySnapshot>(
                     stream: _firestore
                         .collection('menu_categories')
-                        .where('restaurantId', isEqualTo: context.read<AuthService>().restaurantId)
+                         .where('restaurantId', isEqualTo: auth.restaurantId)
                         .snapshots(),
                     builder: (context, categorySnapshot) {
                       if (!categorySnapshot.hasData) {
@@ -1368,8 +1579,8 @@ class _CashierDashboardState extends State<CashierDashboard> {
 
                       return StreamBuilder<QuerySnapshot>(
                         stream: _firestore
-                            .collection('menu_items')
-                            .where('restaurantId', isEqualTo: context.read<AuthService>().restaurantId)
+                          .collection('menu_items')
+                          .where('restaurantId', isEqualTo: auth.restaurantId)
                             .where('isAvailable', isEqualTo: true)
                             .snapshots(),
                         builder: (context, snapshot) {
@@ -1408,6 +1619,32 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                 trailing: IconButton(
                                   icon: const Icon(Icons.add_circle, color: Colors.green, size: 28),
                                   onPressed: () async {
+                                    final orderSnapshot = await _firestore.collection('orders').doc(orderId).get();
+                                    final status = orderSnapshot.exists
+                                        ? ((orderSnapshot.data() as Map<String, dynamic>)['status'] ?? 'unknown').toString()
+                                        : null;
+                                    if (status == 'bill_requested') {
+                                      DebugLogger.logEvent(
+                                        event: 'blocked_action_bill_requested',
+                                        data: {
+                                          'userRole': auth.role.name,
+                                          'userId': auth.currentUser?.uid,
+                                          'tableId': orderData['tableId'],
+                                          'orderId': orderId,
+                                          'lockedBy': null,
+                                          'attemptedAction': 'add_item',
+                                          'previousState': status,
+                                          'newState': status,
+                                        },
+                                      );
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Order is locked for billing')),
+                                        );
+                                      }
+                                      return;
+                                    }
+
                                     final currentItems = List<Map<String, dynamic>>.from(orderData['items']);
                                     final newItem = {
                                       'name': data['name'],
@@ -1429,7 +1666,21 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                       'totalAmount': newTotal,
                                     });
 
-                                    final auth = context.read<AuthService>();
+                                    DebugLogger.logEvent(
+                                      event: 'items_added',
+                                      data: {
+                                        'userRole': auth.role.name,
+                                        'userId': auth.currentUser?.uid,
+                                        'tableId': orderData['tableId'],
+                                        'orderId': orderId,
+                                        'lockedBy': null,
+                                        'previousState': null,
+                                        'newState': null,
+                                        'itemName': data['name'],
+                                        'quantityDelta': 1,
+                                      },
+                                    );
+
                                     final kotData = {
                                       'tableName': orderData['tableName'],
                                       'items': [
@@ -1454,6 +1705,20 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                       'status': 'Pending',
                                       'createdAt': FieldValue.serverTimestamp(),
                                     });
+
+                                    DebugLogger.logEvent(
+                                      event: 'kot_sent',
+                                      data: {
+                                        'userRole': auth.role.name,
+                                        'userId': auth.currentUser?.uid,
+                                        'tableId': orderData['tableId'],
+                                        'orderId': orderId,
+                                        'lockedBy': null,
+                                        'previousState': null,
+                                        'newState': null,
+                                        'orderProgress': 'kot_sent',
+                                      },
+                                    );
 
                                     if (mounted) Navigator.pop(context);
                                     ScaffoldMessenger.of(context).showSnackBar(

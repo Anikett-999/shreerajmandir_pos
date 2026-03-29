@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../home/profile_details_screen.dart';
 import 'reports_screen.dart';
+import '../auth/unauthorized_screen.dart';
 import 'tabs/revenue_tab.dart';
 import 'tabs/users_tab.dart';
 import 'tabs/menu_tab.dart';
@@ -49,6 +50,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final auth = context.watch<AuthService>();
     final email = auth.currentUser?.email;
     final role = auth.role.name;
+
+    if (auth.role == UserRole.kitchen) {
+      return const UnauthorizedScreen();
+    }
     
     return LayoutBuilder(
       builder: (context, constraints) {

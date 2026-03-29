@@ -11,6 +11,7 @@ import 'screens/home/tables_screen.dart';
 import 'providers/cart_provider.dart';
 import 'screens/admin/admin_dashboard.dart';
 import 'screens/cashier/cashier_dashboard.dart';
+import 'screens/kitchen/kitchen_dashboard.dart';
 import 'screens/auth/unauthorized_screen.dart';
 
 void main() async {
@@ -165,6 +166,8 @@ class AuthWrapper extends StatelessWidget {
             return const AdminDashboard();
           } else if (auth.role == UserRole.cashier) {
             return const CashierDashboard();
+          } else if (auth.role == UserRole.kitchen) {
+            return const KitchenDashboard();
           } else if (auth.role == UserRole.waiter) {
             return const TablesScreen();
           }
