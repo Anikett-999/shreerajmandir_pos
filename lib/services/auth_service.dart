@@ -63,6 +63,23 @@ class AuthService extends ChangeNotifier {
         } else {
           if (_savedPin == null) {
             final doc = await _firestore.collection('users').doc(user.uid).get();
+            if (!doc.exists) {
+              await _auth.signOut();
+              _isUnlocked = false;
+              _stopSessionTimer();
+              notifyListeners();
+              return;
+            }
+
+            final status = (doc.data()?['status'] ?? 'active').toString().toLowerCase();
+            if (status == 'deleted' || status == 'inactive') {
+              await _auth.signOut();
+              _isUnlocked = false;
+              _stopSessionTimer();
+              notifyListeners();
+              return;
+            }
+
             String roleStr = doc.data()?['role'] ?? 'waiter';
             _role = _getRoleFromString(roleStr);
             _restaurantId = doc.data()?['restaurantId'];
@@ -104,6 +121,16 @@ class AuthService extends ChangeNotifier {
         await _auth.signOut();
         return 'Access Denied: User profile not found.';
       }
+
+      final status = (doc.data()?['status'] ?? 'active').toString().toLowerCase();
+      if (status == 'deleted') {
+        await _auth.signOut();
+        return 'Your account is deleted. Contact admin.';
+      }
+      if (status == 'inactive') {
+        await _auth.signOut();
+        return 'Your account is disabled. Contact admin.';
+      }
       
       String roleStr = doc.data()?['role'] ?? 'waiter';
       _role = _getRoleFromString(roleStr);
@@ -135,7 +162,7 @@ class AuthService extends ChangeNotifier {
         default:
           return 'Login failed. Please try again.';
       }
-    } on FirebaseException catch (e) {
+    } on FirebaseException {
       return 'Login failed due to a server issue. Please try again.';
     } catch (e) {
       return 'Something went wrong. Please try again.';
@@ -201,7 +228,6 @@ class AuthService extends ChangeNotifier {
     required String name, 
     required String role,
     String? phone,
-    String? pin,
   }) async {
     FirebaseApp? secondaryApp;
     try {
@@ -220,7 +246,6 @@ class AuthService extends ChangeNotifier {
         'role': role,
         'restaurantId': _restaurantId, // Inherit from admin
         'phone': phone,
-        'pin': pin,
         'status': 'active', // active or inactive (deactivated)
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -241,6 +266,33 @@ class AuthService extends ChangeNotifier {
   Future<void> updateStaffStatus(String uid, bool isActive) async {
     await _firestore.collection('users').doc(uid).update({
       'status': isActive ? 'active' : 'inactive',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> adminUpdateStaffUser({
+    required String uid,
+    required String name,
+    required String email,
+    required String role,
+    required String phone,
+  }) async {
+    await _firestore.collection('users').doc(uid).update({
+      'name': name,
+      'email': email,
+      'role': role,
+      'phone': phone,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> adminSoftDeleteStaffUser({
+    required String uid,
+  }) async {
+    await _firestore.collection('users').doc(uid).update({
+      'status': 'deleted',
+      'deletedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 

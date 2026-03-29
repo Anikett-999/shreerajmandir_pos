@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:fl_chart/fl_chart.dart';
-import 'package:intl/intl.dart';
-import '../../../services/report_service.dart';
 import '../../../services/auth_service.dart';
 import 'package:provider/provider.dart';
 
@@ -24,99 +21,168 @@ class _RevenueTabState extends State<RevenueTab> {
 
     final auth = context.read<AuthService>();
     final restaurantId = auth.restaurantId;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final horizontalPadding = screenWidth < 420 ? 14.0 : 20.0;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.fromLTRB(horizontalPadding, 20, horizontalPadding, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Administration Overview", style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 24),
-          // ── TODAY ──────────────────────────────────────────────────────
-            _buildSectionHeader("Today's Performance", Icons.today, Colors.orange),
-            const SizedBox(height: 16),
-            StreamBuilder<QuerySnapshot>(
-              stream: firestore.collection('orders')
-                  .where('restaurantId', isEqualTo: restaurantId)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(fontSize: 12)));
-                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade200),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    "Administration Overview",
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    "Today",
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          StreamBuilder<QuerySnapshot>(
+            stream: firestore.collection('orders').where('restaurantId', isEqualTo: restaurantId).snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(fontSize: 12)));
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-                double todayRevenue = 0;
-                double yesterdayRevenue = 0;
-                int completedOrders = 0;
-                int cancelledOrders = 0;
-                
-                if (snapshot.hasData) {
-                  for (var doc in snapshot.data!.docs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    if (data['createdAt'] == null) continue;
-                    
-                    final createdAt = (data['createdAt'] as Timestamp).toDate();
-                    // In-memory filter for Today/Yesterday
-                    if (createdAt.isBefore(startOfYesterday)) continue;
-                    
-                    final amount = (data['totalAmount'] ?? 0).toDouble();
-                    final status = data['status'] ?? 'open';
-                    
-                    if (createdAt.isAfter(startOfDay)) {
-                      if (status == 'cancelled') {
-                        cancelledOrders++;
-                      } else {
-                        todayRevenue += amount;
-                        if (status == 'billed') completedOrders++;
-                      }
-                    } else if (createdAt.isAfter(startOfYesterday) && createdAt.isBefore(startOfDay)) {
-                      if (status != 'cancelled') {
-                        yesterdayRevenue += amount;
-                      }
+              double todayRevenue = 0;
+              double yesterdayRevenue = 0;
+              int completedOrders = 0;
+              int cancelledOrders = 0;
+
+              if (snapshot.hasData) {
+                for (var doc in snapshot.data!.docs) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  if (data['createdAt'] == null) continue;
+
+                  final createdAt = (data['createdAt'] as Timestamp).toDate();
+                  if (createdAt.isBefore(startOfYesterday)) continue;
+
+                  final amount = (data['totalAmount'] ?? 0).toDouble();
+                  final status = data['status'] ?? 'open';
+
+                  if (createdAt.isAfter(startOfDay)) {
+                    if (status == 'cancelled') {
+                      cancelledOrders++;
+                    } else {
+                      todayRevenue += amount;
+                      if (status == 'billed') completedOrders++;
+                    }
+                  } else if (createdAt.isAfter(startOfYesterday) && createdAt.isBefore(startOfDay)) {
+                    if (status != 'cancelled') {
+                      yesterdayRevenue += amount;
                     }
                   }
                 }
+              }
 
-                String revenueTrend = "";
-                Color trendColor = Colors.grey;
-                if (yesterdayRevenue > 0) {
-                  double growth = ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100;
-                  revenueTrend = "${growth >= 0 ? '+' : ''}${growth.toStringAsFixed(1)}% vs yesterday";
-                  trendColor = growth >= 0 ? Colors.green : Colors.red;
-                }
+              String revenueTrend = "No comparison yet";
+              Color trendColor = Colors.grey;
+              IconData trendIcon = Icons.trending_flat_rounded;
+              if (yesterdayRevenue > 0) {
+                final growth = ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100;
+                revenueTrend = "${growth >= 0 ? '+' : ''}${growth.toStringAsFixed(1)}% vs yesterday";
+                trendColor = growth >= 0 ? const Color(0xFF15803D) : const Color(0xFFB42318);
+                trendIcon = growth >= 0 ? Icons.trending_up_rounded : Icons.trending_down_rounded;
+              }
 
-                final width = MediaQuery.of(context).size.width;
-                // Force 4 columns on most screens
-                int crossAxis = width > 500 ? 5 : (width > 400 ? 4 : 2);
+              final orderTotal = completedOrders + cancelledOrders;
+              final completionRate = orderTotal > 0 ? (completedOrders / orderTotal) : 0.0;
 
-                return GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: crossAxis,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                  // Taller aspect ratio ensures enough height for 3 lines of text
-                  childAspectRatio: width > 1200 ? 1.8 : (width > 800 ? 1.3 : 0.85), 
-                  children: [
-                    _buildStatCard(
-                      "Today's Sales", 
-                      "₹${todayRevenue.toStringAsFixed(2)}", 
-                      Icons.currency_rupee, 
-                      Colors.green,
-                      subtitle: revenueTrend,
-                      subtitleColor: trendColor,
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: 170,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        _buildPrimaryRevenueCard(
+                          title: "Today's Sales",
+                          value: "₹${todayRevenue.toStringAsFixed(2)}",
+                          subtitle: revenueTrend,
+                          subtitleColor: trendColor,
+                          trendIcon: trendIcon,
+                        ),
+                        const SizedBox(width: 12),
+                        _buildStripKpiCard(
+                          title: "Billed Orders",
+                          value: completedOrders.toString(),
+                          icon: Icons.check_circle_outline_rounded,
+                          color: const Color(0xFF0A84C6),
+                        ),
+                        const SizedBox(width: 12),
+                        _buildStripKpiCard(
+                          title: "Cancelled",
+                          value: cancelledOrders.toString(),
+                          icon: Icons.cancel_outlined,
+                          color: const Color(0xFFD92D20),
+                        ),
+                        const SizedBox(width: 12),
+                        _buildActiveTablesCard(firestore, restaurantId),
+                        const SizedBox(width: 12),
+                        _buildPendingKotsCard(firestore, restaurantId),
+                      ],
                     ),
-                    _buildStatCard("Billed Orders", completedOrders.toString(), Icons.check_circle, Colors.blue),
-                    _buildStatCard("Cancelled Today", cancelledOrders.toString(), Icons.block, Colors.red),
-                    _buildActiveTablesCard(firestore, restaurantId),
-                    _buildPendingKotsCard(firestore, restaurantId),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
-      );
-    }
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSectionHeader("Order Activity", Icons.receipt_long_rounded, const Color(0xFF0A84C6)),
+                  const SizedBox(height: 12),
+                  _buildInsightPanel(
+                    title: "Billing completion rate",
+                    subtitle: "$completedOrders billed out of $orderTotal processed orders",
+                    progress: completionRate,
+                    progressColor: const Color(0xFF0A84C6),
+                    trailingValue: "${(completionRate * 100).toStringAsFixed(0)}%",
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
 
   Widget _buildSectionHeader(String title, IconData icon, Color color) {
     return Row(
@@ -130,69 +196,211 @@ class _RevenueTabState extends State<RevenueTab> {
           child: Icon(icon, color: color, size: 18),
         ),
         const SizedBox(width: 12),
-        Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[800])),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: Colors.grey[800],
+            letterSpacing: -0.2,
+          ),
+        ),
         const SizedBox(width: 12),
-        Expanded(child: Divider(color: color.withOpacity(0.2), thickness: 1.5)),
+        Expanded(child: Divider(color: color.withOpacity(0.24), thickness: 1.4)),
       ],
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color, {String? subtitle, Color? subtitleColor}) {
+  Widget _buildPrimaryRevenueCard({
+    required String title,
+    required String value,
+    required String subtitle,
+    required Color subtitleColor,
+    required IconData trendIcon,
+  }) {
     return Container(
+      width: 280,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [color.withOpacity(0.12), color.withOpacity(0.04)],
+          colors: [Color(0xFFF0FDF4), Color(0xFFE7F7ED)],
         ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2), width: 1),
+        border: Border.all(color: const Color(0xFFBBF7D0)),
         boxShadow: [
-          BoxShadow(color: color.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2)),
+          BoxShadow(
+            color: const Color(0xFF15803D).withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(6.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.currency_rupee_rounded, color: Color(0xFF15803D), size: 20),
               ),
-              child: Icon(icon, color: color, size: 14),
-            ),
-            const SizedBox(height: 4),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                   FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(title,
-                      style: TextStyle(color: color.withOpacity(0.75), fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.1)),
-                  ),
-                  const SizedBox(height: 1),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(value,
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color.withOpacity(0.9))),
-                  ),
-                  if (subtitle != null) ...[
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(subtitle,
-                        style: TextStyle(color: subtitleColor ?? Colors.grey, fontSize: 8, fontWeight: FontWeight.w600)),
-                    ),
-                  ],
-                ],
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                ),
+                child: const Text(
+                  "Primary KPI",
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
+                ),
               ),
+            ],
+          ),
+          const Spacer(),
+          Text(
+            title,
+            style: TextStyle(color: Colors.grey[700], fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), height: 1.02),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(trendIcon, color: subtitleColor, size: 16),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: subtitleColor),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStripKpiCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      width: 164,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
             ),
-          ],
-        ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const Spacer(),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.grey[600], fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInsightPanel({
+    required String title,
+    required String subtitle,
+    required double progress,
+    required Color progressColor,
+    required String trailingValue,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
+              ),
+              Text(
+                trailingValue,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: progressColor),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 10,
+              value: progress,
+              backgroundColor: Colors.grey[200],
+              color: progressColor,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -205,7 +413,12 @@ class _RevenueTabState extends State<RevenueTab> {
           .snapshots(),
       builder: (context, snapshot) {
         final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
-        return _buildStatCard("Occupied Tables", count.toString(), Icons.table_bar, Colors.orange);
+        return _buildStripKpiCard(
+          title: "Occupied Tables",
+          value: count.toString(),
+          icon: Icons.table_bar_rounded,
+          color: const Color(0xFFC2410C),
+        );
       },
     );
   }
@@ -218,7 +431,12 @@ class _RevenueTabState extends State<RevenueTab> {
           .snapshots(),
       builder: (context, snapshot) {
         final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
-        return _buildStatCard("Pending KOTs", count.toString(), Icons.timer, Colors.red);
+        return _buildStripKpiCard(
+          title: "Pending KOTs",
+          value: count.toString(),
+          icon: Icons.timer_outlined,
+          color: const Color(0xFFD92D20),
+        );
       },
     );
   }

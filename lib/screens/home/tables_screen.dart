@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/table_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/kot_notification_service.dart';
-import '../../utils/debouncer.dart';
+import 'profile_details_screen.dart';
 import '../kot/kot_tracking_screen.dart';
 import '../order/order_summary_screen.dart';
 import '../order/menu_screen.dart';
@@ -21,6 +21,12 @@ class _TablesScreenState extends State<TablesScreen> {
   final KotNotificationService _kotService = KotNotificationService();
 
   @override
+  void dispose() {
+    _kotService.stopListening();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _kotService.startListening();
@@ -28,8 +34,42 @@ class _TablesScreenState extends State<TablesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white,
+        title: Text(_currentIndex == 0 ? 'ShreeRajmandir' : 'Kitchen Orders'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: IconButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ProfileDetailsScreen()),
+                );
+              },
+              icon: CircleAvatar(
+                radius: 16,
+                backgroundColor: Colors.white,
+                child: Text(
+                  _initials(auth.currentUser?.email),
+                  style: TextStyle(
+                    color: primaryColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      drawer: _buildDrawer(context, auth),
       body: IndexedStack(
         index: _currentIndex,
         children: const [
@@ -47,6 +87,63 @@ class _TablesScreenState extends State<TablesScreen> {
       ),
     );
   }
+
+  Widget _buildDrawer(BuildContext context, AuthService auth) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              color: primaryColor,
+              child: const Text(
+                'Rajmandir Waiter Panel',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.table_restaurant),
+              title: const Text('Tables'),
+              selected: _currentIndex == 0,
+              onTap: () {
+                setState(() => _currentIndex = 0);
+                Navigator.of(context).pop();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.receipt_long),
+              title: const Text('KOT Section'),
+              selected: _currentIndex == 1,
+              onTap: () {
+                setState(() => _currentIndex = 1);
+                Navigator.of(context).pop();
+              },
+            ),
+            const Spacer(),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Logout'),
+              onTap: () async {
+                Navigator.of(context).pop();
+                await auth.logout();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _initials(String? email) {
+    if (email == null || email.trim().isEmpty) return 'SR';
+    return email.trim().substring(0, 1).toUpperCase();
+  }
 }
 
 class TablesGridTab extends StatefulWidget {
@@ -58,143 +155,12 @@ class TablesGridTab extends StatefulWidget {
 
 class _TablesGridTabState extends State<TablesGridTab> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final _debouncer = Debouncer(milliseconds: 1000);
-  String _selectedSection = 'All';
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Tables', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(width: 8),
-            StreamBuilder<void>(
-              stream: FirebaseFirestore.instance.snapshotsInSync(),
-              builder: (context, _) => FutureBuilder<QuerySnapshot>(
-                future: FirebaseFirestore.instance.collection('tables').limit(1).get(const GetOptions(source: Source.server)),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) return const SizedBox.shrink();
-                  if (snapshot.hasError) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: Colors.red[100], borderRadius: BorderRadius.circular(4)),
-                      child: const Text("OFFLINE", style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
-                    );
-                  }
-                  return const SizedBox.shrink();
-                },
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () {
-              context.read<AuthService>().logout();
-            },
-          )
-        ],
-      ),
-      body: Column(
-        children: [
-          _buildFilters(),
-          Expanded(child: _buildGrid()),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showPinSetupDialog(),
-        tooltip: 'Set PIN',
-        child: const Icon(Icons.dialpad),
-      ),
-    );
-  }
-
-  Future<void> _showPinSetupDialog() async {
-    final auth = context.read<AuthService>();
-    if (auth.hasSavedPin) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PIN already set')));
-      return;
-    }
-    String pin = '';
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Set 4-Digit PIN'),
-          content: TextField(
-            maxLength: 4,
-            keyboardType: TextInputType.number,
-            obscureText: true,
-            onChanged: (val) => pin = val,
-            decoration: const InputDecoration(hintText: 'Enter 4 digits'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (pin.length == 4) {
-                  auth.savePin(pin);
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PIN Saved!')));
-                }
-              },
-              child: const Text('Save')
-            )
-          ]
-        );
-      }
-    );
-  }
-
-  Widget _buildFilters() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('tables').snapshots(),
-      builder: (context, snapshot) {
-        final List<String> sections = ['All'];
-        if (snapshot.hasData) {
-          final uniqueSections = snapshot.data!.docs
-              .map((doc) => doc.data() as Map<String, dynamic>)
-              .map((data) => data['section'] as String?)
-              .where((s) => s != null)
-              .cast<String>()
-              .toSet();
-          sections.addAll(uniqueSections);
-        }
-
-        return SizedBox(
-          height: 60,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: sections.length,
-            itemBuilder: (context, index) {
-              final text = sections[index];
-              final isSelected = _selectedSection == text;
-              return Padding(
-                padding: const EdgeInsets.only(right: 8.0, top: 12, bottom: 12),
-                child: ChoiceChip(
-                  label: Text(text, style: TextStyle(
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    color: isSelected ? Colors.white : Colors.black87
-                  )),
-                  selected: isSelected,
-                  selectedColor: Theme.of(context).colorScheme.primary,
-                  onSelected: (val) {
-                    if (val) setState(() => _selectedSection = text);
-                  },
-                ),
-              );
-            },
-          ),
-        );
-      }
+    return Container(
+      color: Colors.grey[50],
+      child: _buildGrid(),
     );
   }
 
@@ -206,7 +172,7 @@ class _TablesGridTabState extends State<TablesGridTab> {
 
         final tables = snapshot.data!.docs.map((doc) {
           return TableModel.fromMap(doc.id, doc.data() as Map<String, dynamic>);
-        }).where((t) => _selectedSection == 'All' || t.section == _selectedSection).toList();
+        }).toList();
 
         if (tables.isEmpty) {
           return const Center(child: Text('No tables found'));
@@ -229,7 +195,7 @@ class _TablesGridTabState extends State<TablesGridTab> {
                 crossAxisCount: crossAxisCount,
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
-                childAspectRatio: 1.2,
+                childAspectRatio: constraints.maxWidth <= 420 ? 0.95 : 1.1,
               ),
               itemCount: tables.length,
               itemBuilder: (context, index) {
@@ -243,68 +209,84 @@ class _TablesGridTabState extends State<TablesGridTab> {
   }
 
   Widget _buildTableCard(TableModel table) {
-    Color statusColor;
     String statusStr;
     switch (table.status) {
       case TableStatus.available:
-        statusColor = Colors.green;
         statusStr = 'Available';
         break;
       case TableStatus.occupied:
-        statusColor = Colors.orange;
         statusStr = 'Occupied';
         break;
       case TableStatus.kotSent:
-        statusColor = Colors.blue;
         statusStr = 'KOT Sent';
         break;
       case TableStatus.billRequested:
-        statusColor = Colors.red;
         statusStr = 'Bill Requested';
         break;
     }
 
+    final primary = Theme.of(context).colorScheme.primary;
+    final cardColor = Color.alphaBlend(primary.withOpacity(0.06), Colors.white);
+    final borderColor = primary.withOpacity(0.25);
+    final chipBg = primary.withOpacity(0.12);
+
     return InkWell(
       onTap: () {
-        _debouncer.run(() => _handleTableTap(table));
+        _handleTableTap(table);
       },
       borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardColor,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: statusColor.withOpacity(0.5), width: 2),
+          border: Border.all(color: borderColor, width: 1.6),
           boxShadow: [
             BoxShadow(
-              color: statusColor.withOpacity(0.1), 
-              blurRadius: 10, 
-              offset: const Offset(0, 4)
+              color: primary.withOpacity(0.10),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             )
           ]
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(table.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                table.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: primary,
+                ),
+              ),
+            ),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.1),
+                color: chipBg,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 statusStr,
-                style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12),
+                style: TextStyle(color: primary, fontWeight: FontWeight.w700, fontSize: 12),
               ),
             ),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.people_outline, size: 16, color: Colors.grey),
+                Icon(Icons.people_outline, size: 16, color: primary.withOpacity(0.75)),
                 const SizedBox(width: 4),
-                Text('${table.capacity} pax', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                Text(
+                  '${table.capacity} pax',
+                  style: TextStyle(color: primary.withOpacity(0.80), fontSize: 12, fontWeight: FontWeight.w600),
+                ),
               ],
             )
           ],

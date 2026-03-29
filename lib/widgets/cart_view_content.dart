@@ -90,7 +90,7 @@ class _CartViewContentState extends State<CartViewContent> {
                                   ),
                                 ],
                               ),
-                              Text('\$${cartItem.totalPrice.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Theme.of(context).colorScheme.primary)),
+                              Text('₹${cartItem.totalPrice.toStringAsFixed(0)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Theme.of(context).colorScheme.primary)),
                             ],
                           ),
                         ),
@@ -109,7 +109,7 @@ class _CartViewContentState extends State<CartViewContent> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Total:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      Text('\$${cart.totalAmount.toStringAsFixed(2)}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+                      Text('₹${cart.totalAmount.toStringAsFixed(0)}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
                     ],
                   ),
                 );
@@ -131,7 +131,7 @@ class _CartViewContentState extends State<CartViewContent> {
                       ),
                       child: _isSubmitting 
                           ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Text('Place Order (Send KOT)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          : const Text('Send Table to KOT', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     );
                   }
                 ),

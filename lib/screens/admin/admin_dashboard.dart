@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
 import '../../services/auth_service.dart';
-import '../../services/report_service.dart';
-import '../../utils/debouncer.dart';
+import '../home/profile_details_screen.dart';
+import 'reports_screen.dart';
 import 'tabs/revenue_tab.dart';
 import 'tabs/users_tab.dart';
 import 'tabs/menu_tab.dart';
 import 'tabs/tables_tab.dart';
-import 'tabs/orders_tab.dart';
 import 'tabs/analytics_tab.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -22,123 +19,12 @@ class AdminDashboard extends StatefulWidget {
 class _AdminDashboardState extends State<AdminDashboard> {
   int _selectedIndex = 0;
   bool _isExtended = true;
-  final _debouncer = Debouncer(milliseconds: 1500);
-  Stream<QuerySnapshot>? _todayOrdersStream;
-  String? _currentRestaurantId;
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final auth = context.watch<AuthService>();
-    if (_currentRestaurantId != auth.restaurantId) {
-      _currentRestaurantId = auth.restaurantId;
-      if (_currentRestaurantId != null) {
-        final today = DateTime.now();
-        final startOfDay = DateTime(today.year, today.month, today.day);
-        _todayOrdersStream = FirebaseFirestore.instance.collection('orders')
-            .where('restaurantId', isEqualTo: _currentRestaurantId)
-            .where('createdAt', isGreaterThanOrEqualTo: startOfDay)
-            .snapshots();
-      } else {
-        _todayOrdersStream = null;
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _debouncer.dispose();
-    super.dispose();
-  }
-
-  void _showMonthSelectionDialog() {
-    int selectedYear = DateTime.now().year;
-    int selectedMonth = DateTime.now().month;
-    
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text("Download Monthly Report"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("Select the month and year for the report:"),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  DropdownButton<int>(
-                    value: selectedYear,
-                    items: List.generate(5, (i) => DateTime.now().year - i)
-                        .map((y) => DropdownMenuItem(value: y, child: Text(y.toString())))
-                        .toList(),
-                    onChanged: (v) => setDialogState(() => selectedYear = v!),
-                  ),
-                  DropdownButton<int>(
-                    value: selectedMonth,
-                    items: List.generate(12, (i) => i + 1)
-                        .map((m) => DropdownMenuItem(value: m, child: Text(DateFormat('MMMM').format(DateTime(2022, m)))))
-                        .toList(),
-                    onChanged: (v) => setDialogState(() => selectedMonth = v!),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _generateMonthlyReport(selectedYear, selectedMonth);
-              },
-              child: const Text("Download PDF"),
-            ),
-          ],
-        ),
-      ),
+  void _openReportsScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ReportsScreen()),
     );
-  }
-
-  Future<void> _generateMonthlyReport(int year, int month) async {
-    final startOfMonth = DateTime(year, month, 1);
-    final endOfMonth = DateTime(year, month + 1, 0, 23, 59, 59);
-    final monthName = DateFormat('MMMM yyyy').format(startOfMonth);
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      final restaurantId = context.read<AuthService>().restaurantId;
-      final snapshot = await FirebaseFirestore.instance.collection('orders')
-          .where('restaurantId', isEqualTo: restaurantId)
-          .where('createdAt', isGreaterThanOrEqualTo: startOfMonth)
-          .where('createdAt', isLessThanOrEqualTo: endOfMonth)
-          .get();
-      
-      final orders = snapshot.docs.where((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        return data['status'] != 'cancelled';
-      }).toList();
-      
-      if (mounted) Navigator.pop(context);
-      
-      if (orders.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("No records found for $monthName")));
-        return;
-      }
-
-      await ReportService.generatePeriodReport("Monthly Revenue Report", "Period: $monthName", orders);
-    } catch (e) {
-      if (mounted) {
-        if (Navigator.canPop(context)) Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-      }
-    }
   }
 
   final List<Widget> _tabs = [
@@ -147,7 +33,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     UsersTab(),
     MenuTab(),
     TablesTab(),
-    OrdersTab(),
   ];
 
   static const _navData = [
@@ -156,12 +41,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
     {'icon': Icons.people, 'label': 'Staff'},
     {'icon': Icons.restaurant_menu, 'label': 'Menu'},
     {'icon': Icons.table_bar, 'label': 'Tables'},
-    {'icon': Icons.receipt_long, 'label': 'Orders'},
   ];
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final auth = context.watch<AuthService>();
+    final email = auth.currentUser?.email;
+    final role = auth.role.name;
     
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -171,24 +58,85 @@ class _AdminDashboardState extends State<AdminDashboard> {
           return Scaffold(
             appBar: AppBar(
               title: Text(_navData[_selectedIndex]['label'] as String, style: const TextStyle(fontWeight: FontWeight.bold)),
-              backgroundColor: Colors.white,
-              elevation: 0,
-              iconTheme: IconThemeData(color: theme.primaryColor),
             ),
             drawer: Drawer(
               child: Column(
                 children: [
-                   DrawerHeader(
+                  DrawerHeader(
                     decoration: BoxDecoration(color: theme.primaryColor.withOpacity(0.1)),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.restaurant, size: 48, color: theme.primaryColor),
-                          const SizedBox(height: 10),
-                          Text("ShreeRajmandir", style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
-                        ],
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 24,
+                              backgroundColor: theme.primaryColor,
+                              child: Text(
+                                _initials(email),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "ShreeRajmandir",
+                                    style: TextStyle(
+                                      color: theme.primaryColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    role.toUpperCase(),
+                                    style: TextStyle(
+                                      color: theme.primaryColor.withOpacity(0.75),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        TextButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ProfileDetailsScreen(),
+                              ),
+                            );
+                          },
+                          icon: Icon(Icons.person_outline, color: theme.primaryColor, size: 18),
+                          label: Text(
+                            "View Profile Details",
+                            style: TextStyle(
+                              color: theme.primaryColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: theme.primaryColor,
+                            padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            minimumSize: Size.zero,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   Expanded(
@@ -212,25 +160,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           padding: EdgeInsets.only(left: 16, top: 8, bottom: 4),
                           child: Text("REPORTS", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
                         ),
-                        StreamBuilder<QuerySnapshot>(
-                          stream: _todayOrdersStream,
-                          builder: (context, snapshot) {
-                            return ListTile(
-                              leading: const Icon(Icons.picture_as_pdf, color: Colors.blue),
-                              title: const Text("Daily PDF Report"),
-                              onTap: snapshot.hasData ? () {
-                                Navigator.pop(context);
-                                _debouncer.run(() => ReportService.generateDailyCollectionReport(DateTime.now(), snapshot.data!.docs));
-                              } : null,
-                            );
-                          }
-                        ),
                         ListTile(
-                          leading: const Icon(Icons.summarize, color: Colors.orange),
-                          title: const Text("Monthly Report"),
+                          leading: const Icon(Icons.description_outlined),
+                          title: const Text("Reports"),
                           onTap: () {
                             Navigator.pop(context);
-                            _showMonthSelectionDialog();
+                            _openReportsScreen();
                           },
                         ),
                       ],
@@ -247,16 +182,33 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
             ),
             body: IndexedStack(index: _selectedIndex, children: _tabs),
-            bottomNavigationBar: BottomNavigationBar(
-              currentIndex: _selectedIndex,
-              onTap: (idx) => setState(() => _selectedIndex = idx),
-              type: BottomNavigationBarType.fixed,
-              selectedItemColor: theme.primaryColor,
-              unselectedItemColor: Colors.grey,
-              items: _navData.map((d) => BottomNavigationBarItem(
-                icon: Icon(d['icon'] as IconData), 
-                label: d['label'] as String
-              )).toList(),
+            bottomNavigationBar: NavigationBarTheme(
+              data: NavigationBarThemeData(
+                height: 72,
+                indicatorColor: theme.primaryColor.withOpacity(0.12),
+                labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                  final selected = states.contains(WidgetState.selected);
+                  return TextStyle(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected ? theme.primaryColor : Colors.grey[700],
+                  );
+                }),
+              ),
+              child: NavigationBar(
+                backgroundColor: Colors.white,
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
+                destinations: _navData.map((d) {
+                  final icon = d['icon'] as IconData;
+                  final label = d['label'] as String;
+                  return NavigationDestination(
+                    icon: Icon(icon, color: Colors.grey[600], size: 22),
+                    selectedIcon: Icon(icon, color: theme.primaryColor, size: 22),
+                    label: label,
+                  );
+                }).toList(),
+              ),
             ),
           );
         }
@@ -352,45 +304,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             )
                           else
                             const SizedBox(height: 16),
-                          
-                          // Daily Report Button
-                          StreamBuilder<QuerySnapshot>(
-                            stream: _todayOrdersStream,
-                            builder: (context, snapshot) {
-                              final hasData = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                child: InkWell(
-                                  onTap: hasData ? () => _debouncer.run(() => ReportService.generateDailyCollectionReport(DateTime.now(), snapshot.data!.docs)) : null,
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                    child: Row(
-                                      mainAxisAlignment: _isExtended ? MainAxisAlignment.start : MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.picture_as_pdf, color: hasData ? Colors.blue : Colors.grey[400], size: 24),
-                                        if (_isExtended) ...[
-                                          const SizedBox(width: 12),
-                                          const Expanded(
-                                            child: Text("Daily PDF", 
-                                              style: TextStyle(color: Colors.black87, fontSize: 13),
-                                              overflow: TextOverflow.ellipsis),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }
-                          ),
 
-                          // Monthly Report Button
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                             child: InkWell(
-                              onTap: () => _showMonthSelectionDialog(),
+                              onTap: _openReportsScreen,
                               borderRadius: BorderRadius.circular(12),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
@@ -398,11 +316,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 child: Row(
                                   mainAxisAlignment: _isExtended ? MainAxisAlignment.start : MainAxisAlignment.center,
                                   children: [
-                                    const Icon(Icons.summarize, color: Colors.orange, size: 24),
+                                    const Icon(Icons.description_outlined, color: Colors.black54, size: 24),
                                     if (_isExtended) ...[
                                       const SizedBox(width: 12),
                                       const Expanded(
-                                        child: Text("Monthly Report", 
+                                        child: Text("Reports", 
                                           style: TextStyle(color: Colors.black87, fontSize: 13),
                                           overflow: TextOverflow.ellipsis),
                                       ),
@@ -455,5 +373,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
         );
       },
     );
+  }
+
+  String _initials(String? email) {
+    if (email == null || email.trim().isEmpty) return 'SR';
+    return email.trim().substring(0, 1).toUpperCase();
   }
 }

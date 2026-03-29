@@ -10,7 +10,6 @@ class DataMigrationService {
       'menu_categories',
       'menu_items',
       'tables',
-      'sections',
       'orders',
       'kots',
       'daily_collections'

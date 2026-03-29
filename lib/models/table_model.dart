@@ -1,12 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 enum TableStatus { available, occupied, kotSent, billRequested }
 
 class TableModel {
   final String id;
   final String name;
   final int capacity;
-  final String section;
   final TableStatus status;
   final String? currentOrderId; // Useful to navigate directly to the open order
 
@@ -14,7 +11,6 @@ class TableModel {
     required this.id,
     required this.name,
     required this.capacity,
-    required this.section,
     required this.status,
     this.currentOrderId,
   });
@@ -33,7 +29,6 @@ class TableModel {
       id: documentId,
       name: data['name'] ?? '',
       capacity: data['capacity'] ?? 2,
-      section: data['section'] ?? 'Main',
       status: mapStatus(data['status'] ?? 'available'),
       currentOrderId: data['currentOrderId'],
     );

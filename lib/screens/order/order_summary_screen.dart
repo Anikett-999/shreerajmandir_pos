@@ -56,6 +56,18 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
             .where('restaurantId', isEqualTo: context.read<AuthService>().restaurantId)
             .orderBy('status').snapshots(),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Unable to load order items: ${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           
           final items = snapshot.data!.docs;
@@ -90,7 +102,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Total:', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                      Text('\$${totalAmount.toStringAsFixed(2)}', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+                      Text('₹${totalAmount.toStringAsFixed(2)}', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
                     ],
                   ),
                 ),
@@ -143,7 +155,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text('\$${data['totalPrice'].toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text('₹${data['totalPrice'].toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 4),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

@@ -336,7 +336,6 @@ class _CashierDashboardState extends State<CashierDashboard> {
                   _buildUltraMiniStatus(table.status),
                   const SizedBox(height: 1),
                   if (!isMobile) ...[
-                    Text("Sec: ${table.section}", style: TextStyle(color: Colors.grey[600], fontSize: 8), overflow: TextOverflow.ellipsis),
                     Text("Cap: ${table.capacity}", style: TextStyle(color: Colors.grey[600], fontSize: 8)),
                     const SizedBox(height: 4),
                   ] else ...[
@@ -710,7 +709,6 @@ class _CashierDashboardState extends State<CashierDashboard> {
                  await _firestore.collection('tables').add({
                    'name': nameCtrl.text.trim(),
                    'capacity': 4,
-                   'section': 'Temporary',
                    'status': 'available',
                    'restaurantId': context.read<AuthService>().restaurantId,
                  });
@@ -1352,83 +1350,119 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 const SizedBox(height: 12),
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
-                    stream: _firestore.collection('menu_items')
+                    stream: _firestore
+                        .collection('menu_categories')
                         .where('restaurantId', isEqualTo: context.read<AuthService>().restaurantId)
-                        .where('isAvailable', isEqualTo: true).snapshots(),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                      final allItems = snapshot.data!.docs;
+                        .snapshots(),
+                    builder: (context, categorySnapshot) {
+                      if (!categorySnapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
 
-                      // Filter by search
-                      final items = searchQuery.isEmpty
-                          ? allItems
-                          : allItems.where((doc) {
-                              final name = (doc.data() as Map<String, dynamic>)['name']?.toString().toLowerCase() ?? '';
-                              return name.contains(searchQuery);
-                            }).toList();
+                      final visibleCategories = categorySnapshot.data!.docs
+                          .map((doc) => doc.data() as Map<String, dynamic>)
+                          .where((data) => data['isVisible'] != false)
+                          .map((data) => (data['name'] ?? '').toString())
+                          .where((name) => name.isNotEmpty)
+                          .toSet();
 
-                      if (items.isEmpty) return const Center(child: Text("No items found", style: TextStyle(color: Colors.grey)));
+                      return StreamBuilder<QuerySnapshot>(
+                        stream: _firestore
+                            .collection('menu_items')
+                            .where('restaurantId', isEqualTo: context.read<AuthService>().restaurantId)
+                            .where('isAvailable', isEqualTo: true)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                          final allItems = snapshot.data!.docs.where((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            final category = (data['category'] ?? '').toString();
+                            return visibleCategories.contains(category);
+                          }).toList();
 
-                      return ListView.builder(
-                        itemCount: items.length,
-                        itemBuilder: (context, index) {
-                          final item = items[index];
-                          final data = item.data() as Map<String, dynamic>;
-                          return ListTile(
-                            leading: Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(8)),
-                              child: Icon(Icons.fastfood, color: Colors.orange[400], size: 22),
-                            ),
-                            title: Text(data['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
-                            subtitle: Text("₹${data['price']}"),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.add_circle, color: Colors.green, size: 28),
-                              onPressed: () async {
-                                final currentItems = List<Map<String, dynamic>>.from(orderData['items']);
-                                final newItem = {
-                                  'name': data['name'],
-                                  'price': (data['price'] as num).toDouble(),
-                                  'quantity': 1,
-                                };
+                          final items = searchQuery.isEmpty
+                              ? allItems
+                              : allItems.where((doc) {
+                                  final name = (doc.data() as Map<String, dynamic>)['name']?.toString().toLowerCase() ?? '';
+                                  return name.contains(searchQuery);
+                                }).toList();
 
-                                int existingIdx = currentItems.indexWhere((i) => i['name'] == data['name']);
-                                if (existingIdx != -1) {
-                                  currentItems[existingIdx]['quantity'] += 1;
-                                } else {
-                                  currentItems.add(newItem);
-                                }
+                          if (items.isEmpty) {
+                            return const Center(child: Text('No items found', style: TextStyle(color: Colors.grey)));
+                          }
 
-                                double newTotal = currentItems.fold(0, (sum, i) => sum + ((i['price'] as num) * (i['quantity'] as num)));
+                          return ListView.builder(
+                            itemCount: items.length,
+                            itemBuilder: (context, index) {
+                              final item = items[index];
+                              final data = item.data() as Map<String, dynamic>;
+                              return ListTile(
+                                leading: Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(8)),
+                                  child: Icon(Icons.fastfood, color: Colors.orange[400], size: 22),
+                                ),
+                                title: Text(data['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
+                                subtitle: Text('₹${data['price']}'),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.add_circle, color: Colors.green, size: 28),
+                                  onPressed: () async {
+                                    final currentItems = List<Map<String, dynamic>>.from(orderData['items']);
+                                    final newItem = {
+                                      'name': data['name'],
+                                      'price': (data['price'] as num).toDouble(),
+                                      'quantity': 1,
+                                    };
 
-                                await _firestore.collection('orders').doc(orderId).update({
-                                  'items': currentItems,
-                                  'totalAmount': newTotal,
-                                });
+                                    int existingIdx = currentItems.indexWhere((i) => i['name'] == data['name']);
+                                    if (existingIdx != -1) {
+                                      currentItems[existingIdx]['quantity'] += 1;
+                                    } else {
+                                      currentItems.add(newItem);
+                                    }
 
-                                final auth = context.read<AuthService>();
-                                final kotData = {
-                                  'tableName': orderData['tableName'],
-                                  'items': [{'name': data['name'], 'quantity': 1, 'price': (data['price'] as num).toDouble()}],
-                                };
-                                await ReportService.printKOTReceipt(kotData, orderId);
+                                    double newTotal = currentItems.fold(0, (sum, i) => sum + ((i['price'] as num) * (i['quantity'] as num)));
 
-                                await _firestore.collection('kots').add({
-                                  'tableId': orderData['tableId'],
-                                  'tableName': orderData['tableName'],
-                                  'orderId': orderId,
-                                  'restaurantId': auth.restaurantId,
-                                  'items': [{'name': data['name'], 'quantity': 1}],
-                                  'waiterName': 'Cashier',
-                                  'status': 'Pending',
-                                  'createdAt': FieldValue.serverTimestamp(),
-                                });
+                                    await _firestore.collection('orders').doc(orderId).update({
+                                      'items': currentItems,
+                                      'totalAmount': newTotal,
+                                    });
 
-                                if (mounted) Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Added ${data['name']}")));
-                              },
-                            ),
+                                    final auth = context.read<AuthService>();
+                                    final kotData = {
+                                      'tableName': orderData['tableName'],
+                                      'items': [
+                                        {
+                                          'name': data['name'],
+                                          'quantity': 1,
+                                          'price': (data['price'] as num).toDouble(),
+                                        }
+                                      ],
+                                    };
+                                    await ReportService.printKOTReceipt(kotData, orderId);
+
+                                    await _firestore.collection('kots').add({
+                                      'tableId': orderData['tableId'],
+                                      'tableName': orderData['tableName'],
+                                      'orderId': orderId,
+                                      'restaurantId': auth.restaurantId,
+                                      'items': [
+                                        {'name': data['name'], 'quantity': 1}
+                                      ],
+                                      'waiterName': 'Cashier',
+                                      'status': 'Pending',
+                                      'createdAt': FieldValue.serverTimestamp(),
+                                    });
+
+                                    if (mounted) Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Added ${data['name']}')),
+                                    );
+                                  },
+                                ),
+                              );
+                            },
                           );
                         },
                       );

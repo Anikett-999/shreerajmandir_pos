@@ -140,11 +140,25 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
                 if (!snapshot.hasData) return const SizedBox();
                 final cats = (snapshot.data?.docs ?? []).toList();
                 cats.sort((a, b) => (a['order'] ?? 0).compareTo(b['order'] ?? 0));
+                final visibleCats = cats.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return data['isVisible'] != false;
+                }).toList();
+
+                final visibleNames = visibleCats
+                    .map((doc) => ((doc.data() as Map<String, dynamic>)['name'] ?? '').toString())
+                    .toSet();
+
+                if (_selectedCategory != 'All' && !visibleNames.contains(_selectedCategory)) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _selectedCategory = 'All');
+                  });
+                }
 
                 return ListView(
                   children: [
                     _buildCategoryItem("All", null, _selectedCategory == "All"),
-                    ...cats.map((doc) {
+                    ...visibleCats.map((doc) {
                       final data = doc.data() as Map<String, dynamic>;
                       final name = data['name'] ?? 'N/A';
                       final imageUrl = data['imageUrl'];
@@ -257,91 +271,130 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
   Widget _buildMenuPane() {
     final restaurantId = context.read<AuthService>().restaurantId;
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('menu_items')
+      stream: FirebaseFirestore.instance
+          .collection('menu_categories')
           .where('restaurantId', isEqualTo: restaurantId)
-          .where('isAvailable', isEqualTo: true)
           .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+      builder: (context, categorySnapshot) {
+        if (!categorySnapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-        final allDocs = snapshot.data!.docs;
-        final allItems = allDocs.map((doc) => MenuItem.fromMap(doc.id, doc.data() as Map<String, dynamic>)).toList();
+        final visibleCategories = categorySnapshot.data!.docs
+            .map((doc) => doc.data() as Map<String, dynamic>)
+            .where((data) => data['isVisible'] != false)
+            .map((data) => (data['name'] ?? '').toString())
+            .where((name) => name.isNotEmpty)
+            .toSet();
 
-        final filteredItems = allItems.where((i) {
-          final matchesCategory = _selectedCategory == "All" || i.category == _selectedCategory;
-          final matchesSearch = _searchQuery.isEmpty || i.name.toLowerCase().contains(_searchQuery);
-          return matchesCategory && matchesSearch;
-        }).toList();
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('menu_items')
+              .where('restaurantId', isEqualTo: restaurantId)
+              .where('isAvailable', isEqualTo: true)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-        return Column(
-          children: [
-            Expanded(
-              child: filteredItems.isEmpty
-                ? const Center(child: Text("No items available.", style: TextStyle(color: Colors.grey)))
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      final cols = constraints.maxWidth < 400 ? 3 : (constraints.maxWidth < 600 ? 4 : 5);
-                      return GridView.builder(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: cols,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                          childAspectRatio: 0.75,
-                        ),
-                        itemCount: filteredItems.length,
-                        itemBuilder: (context, index) {
-                          final item = filteredItems[index];
-                          return InkWell(
-                            onTap: () => setState(() {
-                              final existingIdx = _selectedItems.indexWhere((i) => i.item.id == item.id);
-                              if (existingIdx >= 0) {
-                                _selectedItems[existingIdx].quantity++;
-                              } else {
-                                _selectedItems.add(CartItem(item: item));
-                              }
-                            }),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.grey[100]!),
-                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.01), blurRadius: 4, offset: const Offset(0, 2))],
+            final allDocs = snapshot.data!.docs;
+            final allItems = allDocs
+                .map((doc) => MenuItem.fromMap(doc.id, doc.data() as Map<String, dynamic>))
+                .where((item) => visibleCategories.contains(item.category))
+                .toList();
+
+            final filteredItems = allItems.where((i) {
+              final matchesCategory = _selectedCategory == 'All' || i.category == _selectedCategory;
+              final matchesSearch = _searchQuery.isEmpty || i.name.toLowerCase().contains(_searchQuery);
+              return matchesCategory && matchesSearch;
+            }).toList();
+
+            return Column(
+              children: [
+                Expanded(
+                  child: filteredItems.isEmpty
+                      ? const Center(child: Text('No items available.', style: TextStyle(color: Colors.grey)))
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final cols = constraints.maxWidth < 400 ? 3 : (constraints.maxWidth < 600 ? 4 : 5);
+                            return GridView.builder(
+                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: cols,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                                childAspectRatio: 0.75,
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey[50],
-                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
-                                      ),
-                                      clipBehavior: Clip.antiAlias,
-                                      child: item.imageUrl != null 
-                                          ? Image.network(item.imageUrl!, fit: BoxFit.cover, width: double.infinity)
-                                          : Center(child: Icon(Icons.fastfood, size: 28, color: Colors.grey[200])),
+                              itemCount: filteredItems.length,
+                              itemBuilder: (context, index) {
+                                final item = filteredItems[index];
+                                return InkWell(
+                                  onTap: () => setState(() {
+                                    final existingIdx = _selectedItems.indexWhere((i) => i.item.id == item.id);
+                                    if (existingIdx >= 0) {
+                                      _selectedItems[existingIdx].quantity++;
+                                    } else {
+                                      _selectedItems.add(CartItem(item: item));
+                                    }
+                                  }),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.grey[100]!),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.01),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        )
+                                      ],
                                     ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                        Text("₹${item.price.toStringAsFixed(0)}", style: const TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold, fontSize: 9)),
+                                        Expanded(
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[50],
+                                              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+                                            ),
+                                            clipBehavior: Clip.antiAlias,
+                                            child: item.imageUrl != null
+                                                ? Image.network(item.imageUrl!, fit: BoxFit.cover, width: double.infinity)
+                                                : Center(child: Icon(Icons.fastfood, size: 28, color: Colors.grey[200])),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                item.name,
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              Text(
+                                                '₹${item.price.toStringAsFixed(0)}',
+                                                style: const TextStyle(
+                                                  color: Colors.deepPurple,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 9,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-            ),
-          ],
+                                );
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            );
+          },
         );
       },
     );

@@ -13,6 +13,8 @@ class AnalyticsTab extends StatefulWidget {
 }
 
 class _AnalyticsTabState extends State<AnalyticsTab> {
+  int _chartPageIndex = 0;
+
   @override
   Widget build(BuildContext context) {
     final firestore = FirebaseFirestore.instance;
@@ -29,8 +31,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Analytics & Reports", style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 24),
+          const SizedBox(height: 6),
 
           // ── MONTHLY PERFORMANCE ──────────────────────────────────────────
           _buildSectionHeader("Monthly Performance", Icons.bar_chart, const Color(0xFF800000)),
@@ -76,71 +77,212 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 trendColor = growth >= 0 ? Colors.green : Colors.red;
               }
 
-              final width = MediaQuery.of(context).size.width;
-              int crossAxis = width > 600 ? 3 : 2;
-
               return Column(
                 children: [
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: crossAxis,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                    childAspectRatio: width > 1200 ? 1.8 : (width > 600 ? 1.3 : 1.4),
-                    children: [
-                      _buildStatCard(
-                        "This Month (${DateFormat('MMMM').format(today)})",
-                        "₹${thisMonthRevenue.toStringAsFixed(0)}",
-                        Icons.calendar_month,
-                        const Color(0xFF800000),
-                        subtitle: monthTrend,
-                        subtitleColor: trendColor,
-                      ),
-                      _buildStatCard(
-                        "Last Month (${DateFormat('MMMM').format(startOfLastMonth)})",
-                        "₹${lastMonthRevenue.toStringAsFixed(0)}",
-                        Icons.calendar_today,
-                        Colors.indigo,
-                      ),
-                      _buildStatCard(
-                        "Monthly Orders",
-                        thisMonthOrders.toString(),
-                        Icons.receipt,
-                        Colors.teal,
-                      ),
-                    ],
+                  _buildKpiCarousel(
+                    context,
+                    thisMonthTitle: "This Month (${DateFormat('MMMM').format(today)})",
+                    thisMonthRevenue: "₹${thisMonthRevenue.toStringAsFixed(0)}",
+                    lastMonthTitle: "Last Month (${DateFormat('MMMM').format(startOfLastMonth)})",
+                    lastMonthRevenue: "₹${lastMonthRevenue.toStringAsFixed(0)}",
+                    monthlyOrders: thisMonthOrders.toString(),
+                    monthTrend: monthTrend,
+                    trendColor: trendColor,
                   ),
                   const SizedBox(height: 24),
-                  _buildMonthlyBarChart(firestore, startOfYear, restaurantId),
+                  _buildChartCarousel(firestore, startOfYear, restaurantId),
                 ],
               );
             },
-          ),
-
-          const SizedBox(height: 40),
-
-          // ── REVENUE ANALYTICS ─────────────────────────────────────────────
-          _buildSectionHeader("Distribution & Trends", Icons.analytics, Colors.blue),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 24,
-            runSpacing: 24,
-            children: [
-              SizedBox(
-                width: MediaQuery.of(context).size.width > 1200 ? (MediaQuery.of(context).size.width - 100) / 2 : double.infinity,
-                child: _buildCategoryPieChart(firestore, restaurantId),
-              ),
-              SizedBox(
-                width: MediaQuery.of(context).size.width > 1200 ? (MediaQuery.of(context).size.width - 100) / 2 : double.infinity,
-                child: _buildWeeklyLineChart(firestore, restaurantId),
-              ),
-            ],
           ),
           const SizedBox(height: 40),
         ],
       ),
     );
+  }
+
+  Widget _buildKpiCarousel(
+    BuildContext context, {
+    required String thisMonthTitle,
+    required String thisMonthRevenue,
+    required String lastMonthTitle,
+    required String lastMonthRevenue,
+    required String monthlyOrders,
+    required String monthTrend,
+    required Color trendColor,
+  }) {
+    final cards = <Widget>[
+      _buildKpiCard(
+        title: thisMonthTitle,
+        value: thisMonthRevenue,
+        icon: Icons.calendar_month,
+        color: const Color(0xFF800000),
+      ),
+      _buildKpiCard(
+        title: lastMonthTitle,
+        value: lastMonthRevenue,
+        icon: Icons.calendar_today,
+        color: Colors.indigo,
+      ),
+      _buildKpiCard(
+        title: "Monthly Orders",
+        value: monthlyOrders,
+        icon: Icons.receipt,
+        color: Colors.teal,
+      ),
+      _buildKpiCard(
+        title: "Growth vs Last Month",
+        value: monthTrend.isEmpty ? "No comparison yet" : monthTrend,
+        icon: monthTrend.startsWith('▼') ? Icons.trending_down : Icons.trending_up,
+        color: monthTrend.isEmpty ? Colors.grey : trendColor,
+      ),
+    ];
+
+    return Column(
+      children: List.generate(cards.length, (index) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: index == cards.length - 1 ? 0 : 12),
+          child: cards[index],
+        );
+      }),
+    );
+  }
+
+  Widget _buildKpiCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.visible,
+                  softWrap: true,
+                  style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.visible,
+                  softWrap: true,
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartCarousel(FirebaseFirestore firestore, DateTime startOfYear, String? restaurantId) {
+    final chartBuilders = <Widget Function()>[
+      () => _buildMonthlyBarChart(firestore, startOfYear, restaurantId),
+      () => _buildCategoryPieChart(firestore, restaurantId),
+      () => _buildWeeklyLineChart(firestore, restaurantId),
+    ];
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            IconButton(
+              onPressed: _chartPageIndex > 0 ? () => _changeChartPage(_chartPageIndex - 1) : null,
+              icon: const Icon(Icons.chevron_left_rounded),
+              tooltip: 'Previous chart',
+            ),
+            Text(
+              'Chart ${_chartPageIndex + 1} / ${chartBuilders.length}',
+              style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600),
+            ),
+            IconButton(
+              onPressed: _chartPageIndex < chartBuilders.length - 1 ? () => _changeChartPage(_chartPageIndex + 1) : null,
+              icon: const Icon(Icons.chevron_right_rounded),
+              tooltip: 'Next chart',
+            ),
+          ],
+        ),
+        SizedBox(
+          height: 360,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: (details) {
+              final delta = details.delta.dx;
+              if (delta < -8 && _chartPageIndex < chartBuilders.length - 1) {
+                _changeChartPage(_chartPageIndex + 1);
+              } else if (delta > 8 && _chartPageIndex > 0) {
+                _changeChartPage(_chartPageIndex - 1);
+              }
+            },
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: KeyedSubtree(
+                key: ValueKey<int>(_chartPageIndex),
+                child: chartBuilders[_chartPageIndex](),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(chartBuilders.length, (index) {
+            final selected = index == _chartPageIndex;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: selected ? 16 : 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: selected ? const Color(0xFF8C1026) : Colors.grey[300],
+                borderRadius: BorderRadius.circular(99),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+
+  void _changeChartPage(int newIndex) {
+    if (newIndex < 0 || newIndex > 2 || newIndex == _chartPageIndex) return;
+    setState(() => _chartPageIndex = newIndex);
   }
 
   Widget _buildMonthlyBarChart(FirebaseFirestore firestore, DateTime startOfYear, String? restaurantId) {
@@ -200,6 +342,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
               Expanded(
                 child: BarChart(
                         BarChartData(
+                          barTouchData: BarTouchData(enabled: false),
                           maxY: maxRevenue > 0 ? maxRevenue * 1.2 : 100,
                           barGroups: List.generate(12, (i) {
                             final isCurrent = i == now.month - 1;
@@ -285,6 +428,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
               Expanded(
                 child: PieChart(
                   PieChartData(
+                    pieTouchData: PieTouchData(enabled: false),
                     sectionsSpace: 2,
                     centerSpaceRadius: 40,
                     sections: catRevenue.entries.map((e) {
@@ -366,6 +510,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
               Expanded(
                 child: LineChart(
                   LineChartData(
+                    lineTouchData: LineTouchData(enabled: false),
                     gridData: const FlGridData(show: false),
                     titlesData: const FlTitlesData(
                       topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -408,33 +553,4 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color, {String? subtitle, Color? subtitleColor}) {
-    final width = MediaQuery.of(context).size.width;
-    final isMobile = width < 600;
-
-    return Container(
-      padding: EdgeInsets.all(isMobile ? 8 : 12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.1)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center, // Center vertically
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(icon, color: color, size: isMobile ? 20 : 24),
-          const SizedBox(height: 4),
-          FittedBox(fit: BoxFit.scaleDown, child: Text(title, style: TextStyle(color: color, fontSize: isMobile ? 9 : 10, fontWeight: FontWeight.bold))),
-          const SizedBox(height: 2),
-          FittedBox(fit: BoxFit.scaleDown, child: Text(value, style: TextStyle(fontSize: isMobile ? 16 : 18, fontWeight: FontWeight.bold))),
-          if (subtitle != null) ...[
-            const SizedBox(height: 1),
-            FittedBox(fit: BoxFit.scaleDown, child: Text(subtitle, style: TextStyle(color: subtitleColor ?? Colors.grey, fontSize: isMobile ? 9 : 10))),
-          ]
-        ],
-      ),
-    );
-  }
 }

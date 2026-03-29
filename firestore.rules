@@ -39,7 +39,10 @@ service cloud.firestore {
 
     // User collection: Users can only see/edit their own data, Admins can see/create staff in their restaurant
     match /users/{userId} {
-      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId ||
+        (isAdmin() && belongsToRestaurant(resource.data))
+      );
       allow create: if isSignedIn(); 
       allow update: if isSignedIn() && (request.auth.uid == userId || (isAdmin() && resource.data.restaurantId == getRestaurantId()));
     }
@@ -68,7 +71,8 @@ service cloud.firestore {
     }
     match /tables/{tableId} {
       allow read: if isSignedIn() && belongsToRestaurant(resource.data);
-      allow write: if isSignedIn() && (isAdmin() || isCashier() || isWaiter()) && request.resource.data.restaurantId == getRestaurantId();
+      allow create, update: if isSignedIn() && (isAdmin() || isCashier() || isWaiter()) && request.resource.data.restaurantId == getRestaurantId();
+      allow delete: if isSignedIn() && (isAdmin() || isCashier() || isWaiter()) && belongsToRestaurant(resource.data);
     }
 
     // Orders & Items

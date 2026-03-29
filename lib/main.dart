@@ -40,6 +40,14 @@ class ShreeRajmandirApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const brandMaroon = Color(0xFF8C1026);
+    const brandGold = Color(0xFFC89B3C);
+    const brandGoldLight = Color(0xFFFFD36B);
+    final baseScheme = ColorScheme.fromSeed(
+      seedColor: brandMaroon,
+      brightness: Brightness.light,
+    );
+
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
@@ -50,11 +58,48 @@ class ShreeRajmandirApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF800000)),
+          colorScheme: baseScheme.copyWith(
+            primary: brandMaroon,
+            onPrimary: Colors.white,
+            secondary: brandGold,
+            onSecondary: Colors.white,
+            tertiary: brandGoldLight,
+            surfaceTint: brandGold,
+          ),
           textTheme: GoogleFonts.interTextTheme(Theme.of(context).textTheme),
           appBarTheme: const AppBarTheme(
             centerTitle: true,
             elevation: 0,
+            backgroundColor: brandMaroon,
+            foregroundColor: Colors.white,
+            scrolledUnderElevation: 0,
+            surfaceTintColor: Colors.transparent,
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: brandMaroon,
+              foregroundColor: Colors.white,
+              shadowColor: brandGold.withOpacity(0.45),
+              elevation: 3,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          floatingActionButtonTheme: FloatingActionButtonThemeData(
+            backgroundColor: brandMaroon,
+            foregroundColor: Colors.white,
+            elevation: 4,
+            splashColor: brandGold.withOpacity(0.35),
+          ),
+          chipTheme: ChipThemeData(
+            side: BorderSide(color: brandMaroon.withOpacity(0.20)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+            selectedColor: brandMaroon,
+            secondarySelectedColor: brandMaroon,
+            labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+            secondaryLabelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+            backgroundColor: Colors.white,
+            surfaceTintColor: brandGold.withOpacity(0.12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           ),
         ),
         home: startupError == null
