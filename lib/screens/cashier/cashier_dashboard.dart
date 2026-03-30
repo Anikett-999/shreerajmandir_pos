@@ -11,6 +11,7 @@ import '../../models/menu_item.dart';
 import '../../providers/cart_provider.dart';
 import '../../utils/debouncer.dart';
 import '../../utils/order_status_utils.dart';
+import '../../utils/table_sort_utils.dart';
 import '../../utils/table_state_sync.dart';
 import '../../widgets/order_dialog.dart';
 
@@ -270,7 +271,11 @@ class _CashierDashboardState extends State<CashierDashboard> {
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         
-        final tables = snapshot.data!.docs.map((doc) => TableModel.fromMap(doc.id, doc.data() as Map<String, dynamic>)).toList();
+        final tables = sortTableModelsByNumber(
+          snapshot.data!.docs.map(
+            (doc) => TableModel.fromMap(doc.id, doc.data() as Map<String, dynamic>),
+          ),
+        );
         
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -757,10 +762,12 @@ class _CashierDashboardState extends State<CashierDashboard> {
           ElevatedButton(
             onPressed: () async {
                  if (nameCtrl.text.isNotEmpty) {
+                 final restaurantCode = auth.restaurantCode;
                  final docRef = await _firestore.collection('tables').add({
                    'name': nameCtrl.text.trim(),
                    'capacity': 4,
                    'restaurantId': auth.restaurantId,
+                   if (restaurantCode != null) 'restaurantCode': restaurantCode,
                  });
                  // Ensure table state is applied via TableStateSync
                  await TableStateSync.syncTableForOrderChange(
@@ -1136,7 +1143,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
 
       // Logic from 4.3.2: "Any modification auto-generates a new KOT for the added items"
       final restaurantId = auth.restaurantId;
-      final restaurantName = auth.restaurantName ?? "ShreeRajmandir";
+      final restaurantCode = auth.restaurantCode;
       
       final kotData = {
         'tableName': orderData['tableName'],
@@ -1153,6 +1160,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
         'tableName': orderData['tableName'],
         'orderId': orderId,
         'restaurantId': restaurantId,
+        if (restaurantCode != null) 'restaurantCode': restaurantCode,
         'items': [{
           'name': item['name'],
           'quantity': change,
@@ -1698,6 +1706,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                       'tableName': orderData['tableName'],
                                       'orderId': orderId,
                                       'restaurantId': auth.restaurantId,
+                                      if (auth.restaurantCode != null) 'restaurantCode': auth.restaurantCode,
                                       'items': [
                                         {'name': data['name'], 'quantity': 1}
                                       ],

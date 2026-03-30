@@ -293,6 +293,26 @@ class _LoginScreenState extends State<LoginScreen>
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
                                     _buildFormContent(auth, usePinMode),
+                                    if (auth.profileIssueMessage != null) ...[
+                                      const SizedBox(height: 16),
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.withValues(alpha: 0.08),
+                                          borderRadius: BorderRadius.circular(14),
+                                          border: Border.all(
+                                            color: Colors.red.withValues(alpha: 0.25),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          auth.profileIssueMessage!,
+                                          style: const TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),

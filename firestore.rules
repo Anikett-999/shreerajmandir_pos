@@ -16,6 +16,10 @@ service cloud.firestore {
       return getUserData().get('restaurantId', 'NO_RESTAURANT');
     }
 
+    function getRestaurantCode() {
+      return getUserData().get('restaurantCode', '');
+    }
+
     // Role helpers
     function isAdmin() {
       return getUserData().role == 'admin';
@@ -26,15 +30,41 @@ service cloud.firestore {
     function isWaiter() {
       return getUserData().role == 'waiter';
     }
+    function isKitchen() {
+      return getUserData().role == 'kitchen' || getUserData().role == 'chef';
+    }
 
     // Multi-tenant rule: User must belong to the restaurant owning the data
-    // During transition: Allow if restaurantId is missing (legacy) OR matches
+    // During transition: Allow if restaurantId is missing (legacy) OR matches.
+    // Kitchen currently needs to read legacy KOT data stored against a
+    // restaurant code such as "rest_001" in addition to the canonical
+    // restaurant document id on the user profile.
+    function kitchenRestaurantMatches(resourceData) {
+      return isKitchen() && (
+        resourceData.get('restaurantId', '') == getRestaurantId() ||
+        resourceData.get('restaurantId', '') == getRestaurantCode() ||
+        resourceData.get('restaurantCode', '') == getRestaurantId() ||
+        resourceData.get('restaurantCode', '') == getRestaurantCode() ||
+        resourceData.get('restaurantId', '') == 'rest_001'
+      );
+    }
+
     function belongsToRestaurant(resourceData) {
-      return resourceData == null || !('restaurantId' in resourceData) || resourceData.restaurantId == getRestaurantId();
+      return resourceData == null ||
+        !('restaurantId' in resourceData) ||
+        resourceData.restaurantId == getRestaurantId() ||
+        kitchenRestaurantMatches(resourceData);
     }
 
     function isForMyRestaurant(id) {
        return id.get('restaurantId', 'NO') == getRestaurantId();
+    }
+
+    function kitchenCanUpdateTable() {
+      return isKitchen() &&
+        belongsToRestaurant(resource.data) &&
+        request.resource.data.restaurantId == resource.data.restaurantId &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'currentOrderId']);
     }
 
     // User collection: Users can only see/edit their own data, Admins can see/create staff in their restaurant
@@ -72,6 +102,7 @@ service cloud.firestore {
     match /tables/{tableId} {
       allow read: if isSignedIn() && belongsToRestaurant(resource.data);
       allow create, update: if isSignedIn() && (isAdmin() || isCashier() || isWaiter()) && request.resource.data.restaurantId == getRestaurantId();
+      allow update: if isSignedIn() && kitchenCanUpdateTable();
       allow delete: if isSignedIn() && (isAdmin() || isCashier() || isWaiter()) && belongsToRestaurant(resource.data);
     }
 

@@ -12,8 +12,13 @@ class KitchenDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.read<AuthService>();
+    final auth = context.watch<AuthService>();
     final restaurantId = auth.restaurantId;
+    final profileIssue = auth.profileIssueMessage;
+    final restaurantIds = <String>{
+      if (restaurantId != null && restaurantId.isNotEmpty) restaurantId,
+      kitchenFallbackRestaurantId,
+    }.toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -26,13 +31,20 @@ class KitchenDashboard extends StatelessWidget {
           ),
         ],
       ),
-      body: restaurantId == null || restaurantId.isEmpty
-          ? const Center(child: Text('Restaurant profile missing for this user.'))
+      body: restaurantIds.isEmpty
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  profileIssue ?? 'Restaurant profile missing for this user.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
           : StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('kots')
-                  .where('restaurantId', isEqualTo: restaurantId)
-                  .orderBy('createdAt', descending: true)
+                  .where('restaurantId', whereIn: restaurantIds)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
@@ -51,7 +63,15 @@ class KitchenDashboard extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final docs = snapshot.data!.docs;
+                final docs = [...snapshot.data!.docs];
+                docs.sort((a, b) {
+                  final aTime = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+                  final bTime = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+                  if (aTime == null && bTime == null) return 0;
+                  if (aTime == null) return 1;
+                  if (bTime == null) return -1;
+                  return bTime.compareTo(aTime);
+                });
                 if (docs.isEmpty) {
                   return const Center(child: Text('No KOT entries found.'));
                 }

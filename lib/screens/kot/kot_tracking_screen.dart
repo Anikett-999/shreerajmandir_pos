@@ -5,7 +5,9 @@ import '../../services/auth_service.dart';
 import 'kot_details_screen.dart';
 
 class KotTrackingScreen extends StatefulWidget {
-  const KotTrackingScreen({super.key});
+  const KotTrackingScreen({super.key, this.profileIssueMessage});
+
+  final String? profileIssueMessage;
 
   @override
   State<KotTrackingScreen> createState() => _KotTrackingScreenState();
@@ -15,11 +17,19 @@ class _KotTrackingScreenState extends State<KotTrackingScreen> {
   @override
   Widget build(BuildContext context) {
     final firestore = FirebaseFirestore.instance;
-    final auth = context.read<AuthService>();
+    final auth = context.watch<AuthService>();
     final restaurantId = auth.restaurantId;
 
-    if (restaurantId == null) {
-      return const Center(child: Text('Restaurant profile missing for this user.'));
+    if (restaurantId == null || restaurantId.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            widget.profileIssueMessage ?? 'Restaurant profile missing for this user.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
     }
 
     return StreamBuilder<QuerySnapshot>(

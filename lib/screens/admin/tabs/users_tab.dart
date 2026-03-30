@@ -48,6 +48,8 @@ class UsersTab extends StatelessWidget {
                 children: [
                   _buildTopBar(context, isMobile, users.length),
                   const SizedBox(height: 16),
+                  _buildOrphanedUsersAlert(context),
+                  const SizedBox(height: 16),
                   if (isMobile)
                     _buildStaffMobileList(users, context)
                   else
@@ -56,6 +58,69 @@ class UsersTab extends StatelessWidget {
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _buildOrphanedUsersAlert(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+
+        final orphanedUsers = snapshot.data!.docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final role = (data['role'] ?? '').toString().trim().toLowerCase();
+          final restaurantId = (data['restaurantId'] ?? '').toString().trim();
+          return (role == 'kitchen' || role == 'chef') && restaurantId.isEmpty;
+        }).toList();
+
+        if (orphanedUsers.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final preview = orphanedUsers
+            .take(3)
+            .map((doc) => ((doc.data() as Map<String, dynamic>)['email'] ?? doc.id).toString())
+            .join(', ');
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.amber.shade300),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Kitchen users without restaurant assignment detected',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${orphanedUsers.length} kitchen/chef user(s) are missing `restaurantId` and may fail to log in properly.',
+              ),
+              if (preview.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Examples: $preview',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+              ],
+            ],
+          ),
         );
       },
     );

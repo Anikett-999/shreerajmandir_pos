@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../auth/unauthorized_screen.dart';
 import '../../services/debug_logger.dart';
 import '../../services/kot_notification_service.dart';
+import '../../utils/table_sort_utils.dart';
 import 'profile_details_screen.dart';
 import '../kot/kot_tracking_screen.dart';
 import '../order/order_summary_screen.dart';
@@ -40,6 +41,8 @@ class _TablesScreenState extends State<TablesScreen> {
     if (auth.role == UserRole.kitchen) {
       return const UnauthorizedScreen();
     }
+    final restaurantId = auth.restaurantId;
+    final profileIssue = auth.profileIssueMessage;
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
@@ -77,9 +80,12 @@ class _TablesScreenState extends State<TablesScreen> {
       drawer: _buildDrawer(context, auth),
       body: IndexedStack(
         index: _currentIndex,
-        children: const [
-          TablesGridTab(),
-          KotTrackingScreen(),
+        children: [
+          TablesGridTab(
+            restaurantId: restaurantId,
+            profileIssueMessage: profileIssue,
+          ),
+          KotTrackingScreen(profileIssueMessage: profileIssue),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -152,7 +158,14 @@ class _TablesScreenState extends State<TablesScreen> {
 }
 
 class TablesGridTab extends StatefulWidget {
-  const TablesGridTab({super.key});
+  const TablesGridTab({
+    super.key,
+    required this.restaurantId,
+    this.profileIssueMessage,
+  });
+
+  final String? restaurantId;
+  final String? profileIssueMessage;
 
   @override
   State<TablesGridTab> createState() => _TablesGridTabState();
@@ -183,14 +196,27 @@ class _TablesGridTabState extends State<TablesGridTab> {
   }
 
   Widget _buildGrid() {
+    final restaurantId = widget.restaurantId;
+    if (restaurantId == null || restaurantId.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            widget.profileIssueMessage ?? 'Restaurant profile missing for this user.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
     return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('tables').snapshots(),
+      stream: _firestore.collection('tables').where('restaurantId', isEqualTo: restaurantId).snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-        final tables = snapshot.data!.docs.map((doc) {
+        final tables = sortTableModelsByNumber(snapshot.data!.docs.map((doc) {
           return TableModel.fromMap(doc.id, doc.data() as Map<String, dynamic>);
-        }).toList();
+        }));
 
         if (tables.isEmpty) {
           return const Center(child: Text('No tables found'));

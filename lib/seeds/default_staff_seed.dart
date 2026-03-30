@@ -33,4 +33,12 @@ const List<SeedStaffUser> defaultStaffSeed = [
     phone: '7777777777',
     pin: '3333',
   ),
+  SeedStaffUser(
+    name: 'Kitchen One',
+    email: 'kitchen@test.com',
+    password: 'Kitchen@123',
+    role: 'kitchen',
+    phone: '6666666666',
+    pin: '4444',
+  ),
 ];

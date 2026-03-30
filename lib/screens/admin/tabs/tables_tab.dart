@@ -5,6 +5,8 @@ import '../../../models/table_model.dart';
 import '../../../services/report_service.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/debug_logger.dart';
+import '../../../utils/order_utils.dart';
+import '../../../utils/table_sort_utils.dart';
 import '../../../widgets/order_dialog.dart';
 import '../../../utils/table_state_sync.dart';
 
@@ -33,11 +35,11 @@ class _TablesTabState extends State<TablesTab> {
       stream: _firestore.collection('tables').where('restaurantId', isEqualTo: restaurantId).snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final allTables = snapshot.data!.docs;
-        final tables = allTables.where((doc) {
+        final allTables = snapshot.data!.docs
+            .map((doc) => TableModel.fromMap(doc.id, doc.data() as Map<String, dynamic>));
+        final tables = sortTableModelsByNumber(allTables.where((table) {
           if (_selectedFilter == 'all') return true;
 
-          final table = TableModel.fromMap(doc.id, doc.data() as Map<String, dynamic>);
           final isOccupied =
               table.status == TableStatus.occupied ||
               table.status == TableStatus.kotSent ||
@@ -46,26 +48,7 @@ class _TablesTabState extends State<TablesTab> {
           if (_selectedFilter == 'occupied') return isOccupied;
           if (_selectedFilter == 'available') return table.status == TableStatus.available;
           return true;
-        }).toList();
-
-        tables.sort((a, b) {
-          final aName = (a.data() as Map<String, dynamic>)['name']?.toString() ?? '';
-          final bName = (b.data() as Map<String, dynamic>)['name']?.toString() ?? '';
-
-          final aNumber = _extractTableNumber(aName);
-          final bNumber = _extractTableNumber(bName);
-
-          if (aNumber != null && bNumber != null) {
-            final numberCompare = aNumber.compareTo(bNumber);
-            if (numberCompare != 0) return numberCompare;
-          } else if (aNumber != null) {
-            return -1;
-          } else if (bNumber != null) {
-            return 1;
-          }
-
-          return aName.toLowerCase().compareTo(bName.toLowerCase());
-        });
+        }));
 
         return Column(
           children: [
@@ -124,7 +107,7 @@ class _TablesTabState extends State<TablesTab> {
                     ),
                     itemCount: tables.length,
                     itemBuilder: (context, index) {
-                      final table = TableModel.fromMap(tables[index].id, tables[index].data() as Map<String, dynamic>);
+                      final table = tables[index];
                       final isOccupied = table.status == TableStatus.occupied || table.status == TableStatus.kotSent || table.status == TableStatus.billRequested;
                       
                       return Container(
@@ -710,12 +693,6 @@ class _TablesTabState extends State<TablesTab> {
         ],
       ),
     );
-  }
-
-  int? _extractTableNumber(String value) {
-    final match = RegExp(r'\d+').firstMatch(value);
-    if (match == null) return null;
-    return int.tryParse(match.group(0)!);
   }
 
   /// Map a desired table status to a plausible orderState so we can reuse

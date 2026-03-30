@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../utils/order_utils.dart';
 import '../services/auth_service.dart';
 import '../services/debug_logger.dart';
 import '../models/table_model.dart';
@@ -539,11 +540,29 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
        return;
      }
 
+     final firestore = FirebaseFirestore.instance;
      final auth = context.read<AuthService>();
+     final tableSnapshot = await firestore.collection('tables').doc(widget.table.id).get();
+     final tableRestaurantId = (tableSnapshot.data()?['restaurantId'] ?? '').toString().trim();
+     final restaurantId = auth.restaurantId ?? (tableRestaurantId.isNotEmpty ? tableRestaurantId : null);
+     final restaurantCode = auth.restaurantCode;
+     if (restaurantId == null || restaurantId.isEmpty) {
+       if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(
+             content: Text(
+               auth.profileIssueMessage ?? 'Restaurant profile missing for this user.',
+             ),
+             backgroundColor: Colors.red,
+           ),
+         );
+       }
+       return;
+     }
+
     final waiterDisplayName = auth.role == UserRole.admin ? "Admin (${auth.currentUser?.email?.split('@')[0] ?? 'Admin'})" : "Cashier";
      final total = _selectedItems.fold<double>(0, (sum, i) => sum + (i.item.price * i.quantity));
 
-     final firestore = FirebaseFirestore.instance;
      final batch = firestore.batch();
      final orderRef = firestore.collection('orders').doc();
      
@@ -552,7 +571,8 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
         'tableName': widget.table.name,
         'waiterName': waiterDisplayName,
         'status': 'active',
-        'restaurantId': auth.restaurantId,
+        'restaurantId': restaurantId,
+        if (restaurantCode != null) 'restaurantCode': restaurantCode,
         'createdAt': FieldValue.serverTimestamp(),
         'totalAmount': total,
         'items': _selectedItems.map((i) => {
@@ -573,7 +593,8 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
            'quantity': i.quantity,
            'totalPrice': i.item.price * i.quantity,
            'category': i.item.category,
-           'restaurantId': auth.restaurantId,
+           'restaurantId': restaurantId,
+           if (restaurantCode != null) 'restaurantCode': restaurantCode,
            'status': 'Pending',
            'createdAt': FieldValue.serverTimestamp(),
         });
@@ -585,7 +606,8 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
         'tableId': widget.table.id,
         'tableName': widget.table.name,
         'status': 'Pending',
-        'restaurantId': auth.restaurantId,
+        'restaurantId': restaurantId,
+        if (restaurantCode != null) 'restaurantCode': restaurantCode,
         'createdAt': FieldValue.serverTimestamp(),
         'waiterName': waiterDisplayName,
         'items': _selectedItems.map((i) => {
