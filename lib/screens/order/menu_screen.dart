@@ -5,8 +5,7 @@ import '../../services/auth_service.dart';
 import '../../models/table_model.dart';
 import '../../models/menu_item.dart';
 import '../../providers/cart_provider.dart';
-import '../../widgets/cart_bottom_sheet.dart';
-import '../../widgets/cart_view_content.dart';
+import '../../widgets/cart_page.dart';
 
 class MenuScreen extends StatefulWidget {
   final TableModel table;
@@ -19,6 +18,7 @@ class MenuScreen extends StatefulWidget {
 class _MenuScreenState extends State<MenuScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String _selectedCategory = 'All';
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -34,23 +34,39 @@ class _MenuScreenState extends State<MenuScreen> {
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: Text('Table ${widget.table.name} Menu'),
-        backgroundColor: const Color(0xFF8C0D20),
+        backgroundColor: const Color(0xFF922224),
         foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
+          // Search bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: 'Search menu...',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+              ),
+              onChanged: (val) => setState(() => _searchQuery = val),
+            ),
+          ),
           _buildCategoryTabs(),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
                 if (constraints.maxWidth > 900) {
-                  return Row(
-                    children: [
-                      Expanded(flex: 3, child: _buildMenuGrid()),
-                      VerticalDivider(width: 1, color: Colors.grey[200]),
-                      const Expanded(flex: 1, child: CartViewContent()),
-                    ],
-                  );
+                  return _buildMenuGrid();
                 }
                 return _buildMenuGrid();
               },
@@ -58,44 +74,27 @@ class _MenuScreenState extends State<MenuScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: LayoutBuilder(
+      floatingActionButton: LayoutBuilder(
         builder: (context, constraints) {
           if (MediaQuery.of(context).size.width > 900) return const SizedBox.shrink();
           return Consumer<CartProvider>(
             builder: (context, cart, child) {
               if (cart.items.isEmpty) return const SizedBox.shrink();
-              return InkWell(
-                onTap: () {
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (context) => const CartBottomSheet(),
+              return FloatingActionButton.extended(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Colors.white,
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const CartPage()),
                   );
                 },
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  color: Theme.of(context).colorScheme.primary,
-                  child: SafeArea(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(16)),
-                          child: Text('${cart.totalItems}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                        ),
-                        const Row(
-                          children: [
-                            Text('View Cart', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                            SizedBox(width: 8),
-                            Icon(Icons.shopping_cart_outlined, color: Colors.white)
-                          ],
-                        ),
-                        Text('\$${cart.totalAmount.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                      ],
-                    ),
-                  ),
+                icon: const Icon(Icons.shopping_cart_outlined),
+                label: Row(
+                  children: [
+                    Text('Cart (${cart.totalItems})', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 8),
+                    Text('₹${cart.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ],
                 ),
               );
             },
@@ -112,13 +111,11 @@ class _MenuScreenState extends State<MenuScreen> {
           .where('restaurantId', isEqualTo: restaurantId)
           .orderBy('order').snapshots(),
       builder: (context, snapshot) {
-        final List<String> categories = ['All', 'Starters', 'Mains', 'Desserts', 'Drinks'];
+        List<String> categories = ['All'];
         if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
-           categories.clear();
-           categories.add('All');
-           categories.addAll(snapshot.data!.docs.map((d) => (d.data() as Map)['name'].toString()));
+          categories = ['All'];
+          categories.addAll(snapshot.data!.docs.map((d) => (d.data() as Map<String, dynamic>)['name'].toString()));
         }
-
         return SizedBox(
           height: 60,
           child: ListView.builder(
@@ -136,7 +133,8 @@ class _MenuScreenState extends State<MenuScreen> {
                     color: isSelected ? Colors.white : Colors.black87
                   )),
                   selected: isSelected,
-                  selectedColor: Theme.of(context).colorScheme.primary,
+                  selectedColor: const Color(0xFF922224),
+                  backgroundColor: Colors.white,
                   onSelected: (val) {
                     if (val) setState(() => _selectedCategory = cat);
                   },
@@ -157,10 +155,14 @@ class _MenuScreenState extends State<MenuScreen> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        
-        final items = snapshot.data!.docs.map((d) => MenuItem.fromMap(d.id, d.data() as Map<String,dynamic>))
-            .where((item) => _selectedCategory == 'All' || item.category == _selectedCategory).toList();
-            
+        // Filter by category and search
+        final items = snapshot.data!.docs
+            .map((d) => MenuItem.fromMap(d.id, d.data() as Map<String,dynamic>))
+            .where((item) {
+              final matchesCategory = _selectedCategory == 'All' || item.category == _selectedCategory;
+              final matchesSearch = _searchQuery.isEmpty || item.name.toLowerCase().contains(_searchQuery.toLowerCase());
+              return matchesCategory && matchesSearch;
+            }).toList();
         return LayoutBuilder(
           builder: (context, constraints) {
             int crossAxisCount = 2;
@@ -171,7 +173,6 @@ class _MenuScreenState extends State<MenuScreen> {
             } else if (constraints.maxWidth > 600) {
               crossAxisCount = 3;
             }
-
             return GridView.builder(
               padding: const EdgeInsets.all(16),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -195,110 +196,100 @@ class _MenuScreenState extends State<MenuScreen> {
   Widget _buildMenuItemCard(MenuItem item) {
     return Card(
       elevation: 2,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      margin: const EdgeInsets.all(4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: InkWell(
-        onTap: item.isAvailable ? () => _showQuantitySelector(item) : null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              flex: 3,
-              child: Container(
-                color: Colors.grey[200],
-                child: item.imageUrl != null && item.imageUrl!.isNotEmpty
-                    ? Image.network(item.imageUrl!, fit: BoxFit.cover, errorBuilder: (_,__,___) => const Icon(Icons.fastfood, size: 48, color: Colors.grey))
-                    : const Icon(Icons.fastfood, size: 48, color: Colors.grey),
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 2, overflow: TextOverflow.ellipsis),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('\$${item.price.toStringAsFixed(2)}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 16)),
-                        if (!item.isAvailable)
-                          const Text('Out', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ],
-                    )
-                  ],
+        borderRadius: BorderRadius.circular(18),
+        onTap: item.isAvailable
+            ? () {
+                final cart = context.read<CartProvider>();
+                cart.addItem(item);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Added ${item.name} to cart'),
+                    duration: const Duration(milliseconds: 600),
+                    backgroundColor: const Color(0xFF922224),
+                  ),
+                );
+              }
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: item.imageUrl != null && item.imageUrl!.isNotEmpty
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            item.imageUrl!,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: 80,
+                            errorBuilder: (_,__,___) => const Icon(Icons.fastfood, size: 48, color: Colors.grey),
+                          ),
+                        )
+                      : const Center(child: Icon(Icons.fastfood, size: 48, color: Colors.grey)),
                 ),
               ),
-            )
-          ],
+              const SizedBox(height: 8),
+              Text(
+                item.name,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF922224).withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  item.category,
+                  style: const TextStyle(
+                    color: Color(0xFF922224),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('₹${item.price.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle, color: Color(0xFF922224), size: 28),
+                    onPressed: item.isAvailable
+                        ? () {
+                            final cart = context.read<CartProvider>();
+                            cart.addItem(item);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Added ${item.name} to cart'),
+                                duration: const Duration(milliseconds: 600),
+                                backgroundColor: const Color(0xFF922224),
+                              ),
+                            );
+                          }
+                        : null,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  void _showQuantitySelector(MenuItem item) {
-    int quantity = 1;
-    String instructions = '';
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, size: 32),
-                        onPressed: quantity > 1 ? () => setState(() => quantity--) : null,
-                      ),
-                      const SizedBox(width: 16),
-                      Text('$quantity', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 16),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline, size: 32),
-                        onPressed: () => setState(() => quantity++),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    decoration: InputDecoration(
-                      labelText: 'Special Instructions',
-                      hintText: 'e.g. No onion',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onChanged: (val) => instructions = val,
-                  )
-                ],
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-                ElevatedButton(
-                  onPressed: () {
-                    context.read<CartProvider>().addItem(item, quantity: quantity, instructions: instructions);
-                    Navigator.pop(context);
-                  }, 
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
-                  ),
-                  child: const Text('Add to Cart', style: TextStyle(fontWeight: FontWeight.bold))
-                ),
-              ],
-            );
-          }
-        );
-      }
-    );
-  }
+  // Removed _showQuantitySelector and dialog logic; instant add-to-cart is now handled directly in _buildMenuItemCard.
 }

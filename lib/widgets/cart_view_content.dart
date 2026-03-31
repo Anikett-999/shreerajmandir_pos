@@ -51,8 +51,135 @@ class _CartViewContentState extends State<CartViewContent> {
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Implement actual UI here. For now, return a placeholder to avoid null return.
-    return const SizedBox.shrink();
+    final cart = context.watch<CartProvider>();
+    final theme = Theme.of(context);
+    final maroon = const Color(0xFF922224);
+
+    if (cart.items.isEmpty) {
+      return SizedBox(
+        height: 300,
+        child: Center(
+          child: Text(
+            'Cart is empty',
+            style: theme.textTheme.titleMedium?.copyWith(color: maroon, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Cart',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: maroon,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: cart.items.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, idx) {
+                final cartItem = cart.items[idx];
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    cartItem.item.name,
+                    style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: cartItem.specialInstructions.isNotEmpty
+                      ? Text('Note: ${cartItem.specialInstructions}', style: theme.textTheme.bodySmall)
+                      : null,
+                  leading: CircleAvatar(
+                    backgroundColor: maroon.withOpacity(0.1),
+                    child: Text('${cartItem.quantity}', style: TextStyle(color: maroon, fontWeight: FontWeight.bold)),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        onPressed: () {
+                          if (cartItem.quantity > 1) {
+                            cart.updateQuantity(cartItem, cartItem.quantity - 1);
+                          } else {
+                            cart.removeItem(cartItem);
+                          }
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        onPressed: () => cart.updateQuantity(cartItem, cartItem.quantity + 1),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        onPressed: () => cart.removeItem(cartItem),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Total:',
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                '₹${cart.totalAmount.toStringAsFixed(2)}',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: maroon,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              icon: _isSubmitting
+                  ? const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.check_circle_outline),
+              label: Text(_isSubmitting ? 'Placing Order...' : 'Place Order'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: maroon,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: _isSubmitting
+                  ? null
+                  : () => _placeOrder(cart, context),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _placeOrder(CartProvider cart, BuildContext context) async {
