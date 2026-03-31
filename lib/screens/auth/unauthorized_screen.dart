@@ -22,7 +22,7 @@ class UnauthorizedScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               const Text(
-                "Your account does not have administrator privileges. Please log in with an admin account to access this panel.",
+                "This account role is not authorized for this panel. Please log in with a valid account or contact your administrator.",
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey, fontSize: 16),
               ),

@@ -7,12 +7,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'screens/auth/login_screen.dart';
-import 'screens/home/tables_screen.dart';
 import 'providers/cart_provider.dart';
 import 'screens/admin/admin_dashboard.dart';
 import 'screens/cashier/cashier_dashboard.dart';
-import 'screens/kitchen/kitchen_dashboard.dart';
+import 'screens/home/tables_screen.dart';
 import 'screens/auth/unauthorized_screen.dart';
+import 'screens/kot/kot_tracking_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,14 +41,6 @@ class ShreeRajmandirApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const brandMaroon = Color(0xFF8C1026);
-    const brandGold = Color(0xFFC89B3C);
-    const brandGoldLight = Color(0xFFFFD36B);
-    final baseScheme = ColorScheme.fromSeed(
-      seedColor: brandMaroon,
-      brightness: Brightness.light,
-    );
-
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
@@ -59,48 +51,11 @@ class ShreeRajmandirApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
-          colorScheme: baseScheme.copyWith(
-            primary: brandMaroon,
-            onPrimary: Colors.white,
-            secondary: brandGold,
-            onSecondary: Colors.white,
-            tertiary: brandGoldLight,
-            surfaceTint: brandGold,
-          ),
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF800000)),
           textTheme: GoogleFonts.interTextTheme(Theme.of(context).textTheme),
           appBarTheme: const AppBarTheme(
             centerTitle: true,
             elevation: 0,
-            backgroundColor: brandMaroon,
-            foregroundColor: Colors.white,
-            scrolledUnderElevation: 0,
-            surfaceTintColor: Colors.transparent,
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: brandMaroon,
-              foregroundColor: Colors.white,
-              shadowColor: brandGold.withOpacity(0.45),
-              elevation: 3,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-          floatingActionButtonTheme: FloatingActionButtonThemeData(
-            backgroundColor: brandMaroon,
-            foregroundColor: Colors.white,
-            elevation: 4,
-            splashColor: brandGold.withOpacity(0.35),
-          ),
-          chipTheme: ChipThemeData(
-            side: BorderSide(color: brandMaroon.withOpacity(0.20)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-            selectedColor: brandMaroon,
-            secondarySelectedColor: brandMaroon,
-            labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-            secondaryLabelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-            backgroundColor: Colors.white,
-            surfaceTintColor: brandGold.withOpacity(0.12),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           ),
         ),
         home: startupError == null
@@ -162,14 +117,14 @@ class AuthWrapper extends StatelessWidget {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
         if (auth.isUnlocked) {
-          if (auth.role == UserRole.admin) {
+          if (auth.role == UserRole.manager || auth.role == UserRole.admin) {
             return const AdminDashboard();
-          } else if (auth.role == UserRole.cashier) {
+          } else if (auth.role == UserRole.captain || auth.role == UserRole.cashier) {
             return const CashierDashboard();
-          } else if (auth.role == UserRole.kitchen) {
-            return const KitchenDashboard();
           } else if (auth.role == UserRole.waiter) {
             return const TablesScreen();
+          } else if (auth.role == UserRole.kitchen) {
+            return const KotTrackingScreen();
           }
           return const UnauthorizedScreen();
         }

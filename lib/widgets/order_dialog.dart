@@ -570,7 +570,7 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
         'tableId': widget.table.id,
         'tableName': widget.table.name,
         'waiterName': waiterDisplayName,
-        'status': 'active',
+        'status': 'placed',
         'restaurantId': restaurantId,
         if (restaurantCode != null) 'restaurantCode': restaurantCode,
         'createdAt': FieldValue.serverTimestamp(),
@@ -595,7 +595,7 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
            'category': i.item.category,
            'restaurantId': restaurantId,
            if (restaurantCode != null) 'restaurantCode': restaurantCode,
-           'status': 'Pending',
+           'status': 'placed',
            'createdAt': FieldValue.serverTimestamp(),
         });
      }
@@ -605,7 +605,7 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
         'orderId': orderRef.id,
         'tableId': widget.table.id,
         'tableName': widget.table.name,
-        'status': 'Pending',
+        'status': 'placed',
         'restaurantId': restaurantId,
         if (restaurantCode != null) 'restaurantCode': restaurantCode,
         'createdAt': FieldValue.serverTimestamp(),
@@ -645,7 +645,7 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
          'orderId': orderRef.id,
          'lockedBy': null,
          'previousState': 'none',
-         'newState': 'active',
+         'newState': 'placed',
          'itemCount': _selectedItems.length,
        },
      );
@@ -684,7 +684,7 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
          'orderId': orderRef.id,
          'lockedBy': null,
          'previousState': 'active',
-         'newState': 'active',
+         'newState': 'placed',
           'orderProgress': 'kot_sent',
        },
      );

@@ -1,9 +1,10 @@
-bool isOrderEditable(dynamic rawStatus) {
-  final status = (rawStatus ?? 'active').toString().trim().toLowerCase();
+import 'order_status_utils.dart';
 
+bool isOrderEditable(dynamic rawStatus) {
+  final status = OrderStatusUtils.normalizeStatus(rawStatus?.toString() ?? '');
   switch (status) {
-    case 'bill_requested':
-    case 'billed':
+    case 'served':
+    case 'closed':
     case 'cancelled':
       return false;
     default:

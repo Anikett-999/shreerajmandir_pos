@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,96 +10,106 @@ class ProfileDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
-    final colorScheme = Theme.of(context).colorScheme;
-    final email = auth.currentUser?.email ?? 'Not available';
-    final role = auth.role.name;
-    final restaurant = auth.restaurantName ?? auth.restaurantId ?? 'Not available';
+    final uid = auth.currentUser?.uid;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile Details'),
+        backgroundColor: const Color(0xFF8C0D20),
+        foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: colorScheme.primary,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 32,
-                    backgroundColor: Colors.white,
-                    child: Text(
-                      _initials(email),
-                      style: TextStyle(
-                        color: colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
-                      ),
-                    ),
+      body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        future: uid == null
+            ? Future.value(null)
+            : FirebaseFirestore.instance.collection('users').doc(uid).get(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final profileData = snapshot.data?.data();
+          final name = profileData?['name']?.toString() ?? auth.currentUser?.displayName ?? 'N/A';
+          final email = profileData?['email']?.toString() ?? auth.currentUser?.email ?? 'Not available';
+          final role = profileData?['role']?.toString() ?? auth.role.name;
+          final restaurant = profileData?['restaurantName']?.toString() ?? auth.restaurantName ?? auth.restaurantId ?? 'N/A';
+          final phone = profileData?['phone']?.toString() ?? 'Not provided';
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 22),
+                CircleAvatar(
+                  radius: 46,
+                  backgroundColor: const Color(0xFF8C0D20),
+                  child: Text(
+                    _initials(name),
+                    style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w700),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          email,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            role.toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
+                ),
+                const SizedBox(height: 14),
+                Text(name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text(email, style: const TextStyle(fontSize: 14, color: Colors.black54)),
+                const SizedBox(height: 4),
+                Chip(
+                  label: Text(role.toUpperCase()),
+                  backgroundColor: Colors.grey[200],
+                ),
+                const SizedBox(height: 18),
+
+                _InfoCard(
+                  title: 'Profile',
+                  icon: Icons.person_outline,
+                  rows: [
+                    _InfoRow(label: 'Name', value: name),
+                    _InfoRow(label: 'Email', value: email),
+                    _InfoRow(label: 'Role', value: role),
+                    _InfoRow(label: 'Phone', value: phone),
+                    _InfoRow(label: 'Restaurant', value: restaurant),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
+                    onPressed: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (context) {
+                          return AlertDialog(
+                            title: const Text('Logout'),
+                            content: const Text('Are you sure you want to log out?'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('Logout'),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+
+                      if (confirmed == true) {
+                        context.read<AuthService>().logout();
+                      }
+                    },
+                    child: const Text('LOGOUT'),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            _InfoCard(
-              title: 'Account',
-              icon: Icons.person_outline,
-              rows: [
-                _InfoRow(label: 'Email', value: email),
-                _InfoRow(label: 'Role', value: role),
-                _InfoRow(label: 'User ID', value: auth.currentUser?.uid ?? 'Not available'),
+                ),
               ],
             ),
-            const SizedBox(height: 12),
-            _InfoCard(
-              title: 'Restaurant',
-              icon: Icons.storefront_outlined,
-              rows: [
-                _InfoRow(label: 'Name / ID', value: restaurant),
-              ],
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

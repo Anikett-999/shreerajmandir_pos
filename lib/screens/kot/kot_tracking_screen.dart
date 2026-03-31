@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
+import '../../utils/order_status_utils.dart';
 import 'kot_details_screen.dart';
 
 class KotTrackingScreen extends StatefulWidget {
@@ -55,7 +56,8 @@ class _KotTrackingScreenState extends State<KotTrackingScreen> {
 
         final kots = snapshot.data!.docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
-          return (data['status'] ?? 'Pending') != 'Served';
+          final normalized = OrderStatusUtils.normalizeStatus((data['status'] ?? 'placed').toString());
+          return normalized != 'served' && normalized != 'closed' && normalized != 'cancelled';
         }).toList();
 
         if (kots.isEmpty) return const Center(child: Text('All KOTs are clear!'));
@@ -68,7 +70,7 @@ class _KotTrackingScreenState extends State<KotTrackingScreen> {
             final items = (data['items'] as List?) ?? [];
             final tableLabel = (data['tableName'] ?? data['tableId'] ?? 'N/A').toString();
             final kotTime = _formatKotTime(data['createdAt']);
-            final status = _normalizeStatus((data['status'] ?? 'Pending').toString());
+            final status = OrderStatusUtils.normalizeStatus((data['status'] ?? 'placed').toString());
             final primary = Theme.of(context).colorScheme.primary;
             final (chipBg, chipFg) = _chipColors(status, primary);
             final waiterName = (data['waiterName'] ?? '').toString().trim();
@@ -221,13 +223,6 @@ class _KotTrackingScreenState extends State<KotTrackingScreen> {
     );
   }
 
-  String _normalizeStatus(String status) {
-    final lower = status.trim().toLowerCase();
-    if (lower == 'done') return 'Done';
-    if (lower == 'preparing') return 'Preparing';
-    return 'Pending';
-  }
-
   String _formatKotTime(dynamic createdAt) {
     if (createdAt is! Timestamp) return '--:--';
     final dateTime = createdAt.toDate();
@@ -239,10 +234,11 @@ class _KotTrackingScreenState extends State<KotTrackingScreen> {
 
   (Color, Color) _chipColors(String status, Color primary) {
     switch (status) {
-      case 'Done':
+      case 'served':
         return (const Color(0xFFE8F5E9), const Color(0xFF2E7D32));
-      case 'Preparing':
+      case 'preparing':
         return (const Color(0xFFFFF3E0), const Color(0xFFEF6C00));
+      case 'placed':
       default:
         return (primary.withOpacity(0.14), primary);
     }

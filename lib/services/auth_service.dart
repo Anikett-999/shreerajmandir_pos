@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum UserRole { waiter, admin, cashier, kitchen, none }
+enum UserRole { waiter, admin, cashier, kitchen, manager, captain, none }
 
 const String kitchenFallbackRestaurantId = 'rest_001';
 
@@ -38,6 +38,10 @@ UserRole userRoleFromString(String roleStr) {
     case 'kitchen':
     case 'chef':
       return UserRole.kitchen;
+    case 'manager':
+      return UserRole.manager;
+    case 'captain':
+      return UserRole.captain;
     case 'waiter':
       return UserRole.waiter;
     default:

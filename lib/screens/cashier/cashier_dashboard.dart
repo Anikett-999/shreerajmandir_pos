@@ -381,13 +381,13 @@ class _CashierDashboardState extends State<CashierDashboard> {
                        final batch = _firestore.batch();
                        if (table.currentOrderId != null) {
                          final orderRef = _firestore.collection('orders').doc(table.currentOrderId);
-                         batch.update(orderRef, {'status': 'bill_requested'});
+                         batch.update(orderRef, {'status': 'served'});
                        }
                        await TableStateSync.syncTableForOrderChange(
                          firestore: _firestore,
                          tableId: table.id,
                          orderId: table.currentOrderId ?? '',
-                         orderState: 'bill_requested',
+                         orderState: 'served',
                          auth: auth,
                          batch: batch,
                        );
@@ -402,7 +402,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                            'orderId': table.currentOrderId,
                            'lockedBy': null,
                            'previousState': previousState,
-                           'newState': 'bill_requested',
+                           'newState': 'served',
                          },
                        );
                     }),
@@ -1431,7 +1431,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
         assignedReceiptNo = counterSnap.exists ? (counterSnap.data()!['lastReceiptNo'] ?? 0) + 1 : 1;
 
         transaction.update(orderRef, {
-          'status': 'billed',
+          'status': 'closed',
           'subtotal': subtotal,
           'cgst': cgst,
           'sgst': sgst,
@@ -1441,12 +1441,12 @@ class _CashierDashboardState extends State<CashierDashboard> {
           'billedAt': FieldValue.serverTimestamp(),
         });
 
-        // Sync table state based on order state (billed -> available)
+        // Sync table state based on order state (closed -> available)
         await TableStateSync.syncTableForOrderChange(
           firestore: _firestore,
           tableId: table.id,
           orderId: table.currentOrderId ?? '',
-          orderState: 'billed',
+          orderState: 'closed',
           auth: auth,
           transaction: transaction,
         );
@@ -1467,7 +1467,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
 
         // Update KOTs
         for (var doc in kotsSnap.docs) {
-          transaction.update(doc.reference, {'status': 'Served'});
+          transaction.update(doc.reference, {'status': 'served'});
         }
       });
 
@@ -1480,7 +1480,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
           'orderId': table.currentOrderId,
           'lockedBy': null,
           'previousState': previousOrderState,
-          'newState': 'billed',
+          'newState': 'closed',
           'paymentMode': paymentMode,
         },
       );
@@ -1630,8 +1630,8 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                     final orderSnapshot = await _firestore.collection('orders').doc(orderId).get();
                                     final status = orderSnapshot.exists
                                         ? ((orderSnapshot.data() as Map<String, dynamic>)['status'] ?? 'unknown').toString()
-                                        : null;
-                                    if (status == 'bill_requested') {
+                                        : 'unknown';
+                                    if (OrderStatusUtils.normalizeStatus(status) == 'served') {
                                       DebugLogger.logEvent(
                                         event: 'blocked_action_bill_requested',
                                         data: {

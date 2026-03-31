@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/debug_logger.dart';
 import '../../models/table_model.dart';
+import '../../utils/order_status_utils.dart';
 import '../../utils/debouncer.dart';
 import 'menu_screen.dart';
 
@@ -31,11 +32,12 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
           StreamBuilder<DocumentSnapshot>(
             stream: _firestore.collection('orders').doc(widget.orderId).snapshots(),
             builder: (context, snapshot) {
-              final status = snapshot.hasData && snapshot.data!.exists 
-                  ? (snapshot.data!.data() as Map<String, dynamic>)['status'] 
-                  : 'active';
-              
-              if (status == 'bill_requested') {
+              final rawStatus = snapshot.hasData && snapshot.data!.exists 
+                  ? (snapshot.data!.data() as Map<String, dynamic>)['status'] ?? 'placed'
+                  : 'placed';
+              final status = OrderStatusUtils.normalizeStatus(rawStatus.toString());
+
+              if (rawStatus.toString().toLowerCase() == 'bill_requested' || rawStatus.toString().toLowerCase() == 'bill-requested') {
                 return const Padding(
                   padding: EdgeInsets.only(right: 16.0),
                   child: Center(child: Text('Bill Requested', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold))),
@@ -123,16 +125,21 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
   }
 
   Widget _buildOrderItemCard(Map<String, dynamic> data) {
-    final status = data['status'] ?? 'Pending';
+    final rawStatus = (data['status'] ?? 'placed').toString();
+    final status = OrderStatusUtils.normalizeStatus(rawStatus);
     Color statusColor;
     switch (status) {
-      case 'Preparing':
+      case 'preparing':
         statusColor = Colors.orange;
         break;
-      case 'Done':
+      case 'served':
         statusColor = Colors.green;
         break;
-      default: // Pending
+      case 'cancelled':
+      case 'closed':
+        statusColor = Colors.grey;
+        break;
+      default: // placed
         statusColor = Colors.blue;
         break;
     }
@@ -161,7 +168,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-              child: Text(status, style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.bold)),
+              child: Text(OrderStatusUtils.getDisplayLabel(status), style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.bold)),
             )
           ],
         ),
@@ -189,9 +196,12 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
           ? ((orderSnapshot.data() as Map<String, dynamic>)['status'] ?? 'unknown').toString()
           : 'unknown';
 
-      await _firestore.collection('orders').doc(widget.orderId).update({
-        'status': 'bill_requested',
-      });
+      await OrderStatusUtils.updateOrderStatus(
+        orderId: widget.orderId,
+        targetStatus: 'served',
+        role: auth.role.name,
+        auth: auth,
+      );
 
       DebugLogger.logEvent(
         event: 'bill_requested',
@@ -202,7 +212,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
           'orderId': widget.orderId,
           'lockedBy': null,
           'previousState': previousState,
-          'newState': 'bill_requested',
+          'newState': 'served',
         },
       );
 

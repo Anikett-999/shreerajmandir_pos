@@ -18,11 +18,93 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const maroon = Color(0xFF6B1620); // Even darker, shiny maroon
+    const maroonGradient = LinearGradient(
+      colors: [Color(0xFF922224), Color(0xFF6B1620)],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: const Color(0xFF922224),
         title: const Text(
           'Reports',
           style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+      drawer: Drawer(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.only(top: 48, bottom: 24),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF922224), Color(0xFF6B1620)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 8,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 8,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.account_circle,
+                          size: 70,
+                          color: Color(0xFF922224),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Profile',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        letterSpacing: 1.1,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black38,
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // ... Add more drawer items here as needed ...
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: const [],
+              ),
+            ),
+          ],
         ),
       ),
       body: ListView(
@@ -48,7 +130,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             subtitle: 'Pick a date and generate day-wise business report',
             onTap: _isGenerating ? null : _onDailyPressed,
           ),
-          const SizedBox(height: 12), 
+          const SizedBox(height: 12),
           _buildReportTile(
             icon: Icons.date_range_outlined,
             title: 'Monthly Report',

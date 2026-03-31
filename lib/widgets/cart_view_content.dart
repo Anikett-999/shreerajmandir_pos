@@ -124,7 +124,7 @@ class _CartViewContentState extends State<CartViewContent> {
           'tableId': cart.tableId,
           'tableName': (tableDoc.data() as Map<String, dynamic>)['name'] ?? 'Unknown',
           'waiterName': 'Waiter',
-          'status': 'active',
+          'status': 'placed',
           'restaurantId': restaurantId,
           if (restaurantCode != null) 'restaurantCode': restaurantCode,
           'createdAt': FieldValue.serverTimestamp(),
@@ -136,7 +136,7 @@ class _CartViewContentState extends State<CartViewContent> {
           firestore: firestore,
           tableId: tableId!,
           orderId: orderId,
-          orderState: 'active',
+          orderState: 'placed',
           auth: auth,
           batch: batch,
         );
@@ -157,7 +157,7 @@ class _CartViewContentState extends State<CartViewContent> {
         'orderId': orderId,
         'tableId': cart.tableId,
         'tableName': (tableDoc.data() as Map<String, dynamic>)['name'] ?? 'Unknown',
-        'status': 'Pending',
+        'status': 'placed',
         'restaurantId': restaurantId,
         if (restaurantCode != null) 'restaurantCode': restaurantCode,
         'items': kotItems,
@@ -178,7 +178,7 @@ class _CartViewContentState extends State<CartViewContent> {
           'specialInstructions': cartItem.specialInstructions,
           'restaurantId': restaurantId,
           if (restaurantCode != null) 'restaurantCode': restaurantCode,
-          'status': 'Pending',
+          'status': 'placed',
         });
       }
 

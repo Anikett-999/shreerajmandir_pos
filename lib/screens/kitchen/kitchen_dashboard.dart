@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/debug_logger.dart';
+import '../../utils/order_status_utils.dart';
 import '../../utils/table_state_sync.dart';
 
 class KitchenDashboard extends StatelessWidget {
@@ -83,7 +84,7 @@ class KitchenDashboard extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final doc = docs[index];
                     final data = doc.data() as Map<String, dynamic>;
-                    final status = _normalizeKotStatus((data['status'] ?? '').toString());
+                    final status = OrderStatusUtils.normalizeStatus((data['status'] ?? '').toString());
                     final tableId = (data['tableId'] ?? data['tableName'] ?? 'N/A').toString();
                     final orderId = (data['orderId'] ?? 'N/A').toString();
                     final createdAt = _formatDateTime(data['createdAt']);
@@ -125,7 +126,7 @@ class KitchenDashboard extends StatelessWidget {
                             const SizedBox(height: 12),
                             Row(
                               children: [
-                                if (status == 'kot_sent')
+                                if (status == 'placed')
                                   ElevatedButton(
                                     onPressed: () => _updateKotStatus(
                                       context: context,
@@ -142,14 +143,14 @@ class KitchenDashboard extends StatelessWidget {
                                       context: context,
                                       kotId: doc.id,
                                       data: data,
-                                      targetStatus: 'ready',
-                                      event: 'kot_ready',
+                                      targetStatus: 'served',
+                                      event: 'kot_served',
                                     ),
-                                    child: const Text('Mark Ready'),
+                                    child: const Text('Mark Served'),
                                   ),
-                                if (status == 'ready')
+                                if (status == 'served')
                                   const Text(
-                                    'Ready',
+                                    'Served',
                                     style: TextStyle(fontWeight: FontWeight.w700, color: Colors.green),
                                   ),
                               ],
@@ -163,13 +164,6 @@ class KitchenDashboard extends StatelessWidget {
               },
             ),
     );
-  }
-
-  String _normalizeKotStatus(String rawStatus) {
-    final normalized = rawStatus.trim().toLowerCase();
-    if (normalized == 'preparing') return 'preparing';
-    if (normalized == 'ready') return 'ready';
-    return 'kot_sent';
   }
 
   String _formatDateTime(dynamic createdAt) {
@@ -211,7 +205,7 @@ class KitchenDashboard extends StatelessWidget {
           final s = (snap.data()?['status'] ?? '').toString().toLowerCase();
           // Consider the just-updated KOT as targetStatus
           final effective = (id == kotId) ? targetStatus.toLowerCase() : s;
-          if (effective != 'ready') {
+          if (OrderStatusUtils.normalizeStatus(effective) != 'served') {
             allReady = false;
             break;
           }
@@ -219,14 +213,14 @@ class KitchenDashboard extends StatelessWidget {
 
         if (allReady && orderId.isNotEmpty) {
           final orderRef = firestore.collection('orders').doc(orderId);
-          tx.update(orderRef, {'status': 'ready', 'updatedAt': FieldValue.serverTimestamp()});
+          tx.update(orderRef, {'status': 'served', 'updatedAt': FieldValue.serverTimestamp()});
 
           // Sync table state within the same transaction
           await TableStateSync.syncTableForOrderChange(
             firestore: firestore,
             tableId: tableId,
             orderId: orderId,
-            orderState: 'ready',
+            orderState: 'served',
             auth: auth,
             transaction: tx,
           );
@@ -279,7 +273,7 @@ class _StatusChip extends StatelessWidget {
     Color fg;
 
     switch (status) {
-      case 'ready':
+      case 'served':
         bg = const Color(0xFFE8F5E9);
         fg = const Color(0xFF2E7D32);
         break;
@@ -287,9 +281,13 @@ class _StatusChip extends StatelessWidget {
         bg = const Color(0xFFFFF3E0);
         fg = const Color(0xFFEF6C00);
         break;
-      default:
+      case 'placed':
         bg = const Color(0xFFE3F2FD);
         fg = const Color(0xFF1565C0);
+        break;
+      default:
+        bg = const Color(0xFFF5F5F5);
+        fg = const Color(0xFF616161);
         break;
     }
 

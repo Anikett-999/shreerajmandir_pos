@@ -7,9 +7,10 @@ class TableStateSync {
   /// Map order status -> table status string
   static String mapOrderToTable(String orderStatus) {
     final s = orderStatus.toString().trim().toLowerCase();
-    if (s == 'active' || s == 'open') return 'occupied';
-    if (s == 'bill_requested' || s == 'bill-requested' || s == 'billrequested') return 'billRequested';
-    if (s == 'billed' || s == 'cancelled' || s == 'cancel') return 'available';
+    if (s == 'placed' || s == 'preparing' || s == 'served' || s == 'active' || s == 'open') return 'occupied';
+    if (s == 'bill_requested' || s == 'bill-requested' || s == 'billrequested') return 'occupied';
+    if (s == 'closed' || s == 'billed') return 'available';
+    if (s == 'cancelled' || s == 'cancel') return 'available';
     return 'occupied';
   }
 

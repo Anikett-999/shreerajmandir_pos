@@ -5,6 +5,7 @@ class TableModel {
   final String name;
   final int capacity;
   final TableStatus status;
+  final String section;
   final String? currentOrderId; // Useful to navigate directly to the open order
 
   TableModel({
@@ -12,6 +13,7 @@ class TableModel {
     required this.name,
     required this.capacity,
     required this.status,
+    required this.section,
     this.currentOrderId,
   });
 
@@ -30,6 +32,9 @@ class TableModel {
       name: data['name'] ?? '',
       capacity: data['capacity'] ?? 2,
       status: mapStatus(data['status'] ?? 'available'),
+      section: data['section']?.toString().trim().isNotEmpty == true
+          ? data['section'].toString().trim()
+          : 'Main',
       currentOrderId: data['currentOrderId'],
     );
   }
