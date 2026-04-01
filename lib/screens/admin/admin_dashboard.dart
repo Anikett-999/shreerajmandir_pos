@@ -18,6 +18,7 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
+  static const Color _adminAppBarColor = Color(0xFF922224);
   int _selectedIndex = 0;
   bool _isExtended = true;
 
@@ -62,7 +63,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
         if (isMobile) {
           return Scaffold(
             appBar: AppBar(
-              title: Text(_navData[_selectedIndex]['label'] as String, style: const TextStyle(fontWeight: FontWeight.bold)),
+              backgroundColor: _adminAppBarColor,
+              foregroundColor: Colors.white,
+              titleSpacing: 16,
+              title: Text(
+                _navData[_selectedIndex]['label'] as String,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
             drawer: Drawer(
               child: Column(
@@ -370,7 +377,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
               Expanded(
                 child: Container(
                   color: Colors.grey[50],
-                  child: IndexedStack(index: _selectedIndex, children: _tabs),
+                  child: Column(
+                    children: [
+                      Container(
+                        height: kToolbarHeight,
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        color: _adminAppBarColor,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _navData[_selectedIndex]['label'] as String,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: IndexedStack(index: _selectedIndex, children: _tabs),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],

@@ -112,7 +112,7 @@ class _RevenueTabState extends State<RevenueTab> {
                       cancelledOrders++;
                     } else {
                       todayRevenue += amount;
-                      if (status == 'billed') completedOrders++;
+                      if (status == 'closed') completedOrders++;
                     }
                   } else if (createdAt.isAfter(startOfYesterday) && createdAt.isBefore(startOfDay)) {
                     if (status != 'cancelled') {
@@ -152,7 +152,7 @@ class _RevenueTabState extends State<RevenueTab> {
                         ),
                         const SizedBox(width: 12),
                         _buildStripKpiCard(
-                          title: "Billed Orders",
+                          title: "Closed Orders",
                           value: completedOrders.toString(),
                           icon: Icons.check_circle_outline_rounded,
                           color: const Color(0xFF0A84C6),
@@ -176,7 +176,7 @@ class _RevenueTabState extends State<RevenueTab> {
                   const SizedBox(height: 12),
                   _buildInsightPanel(
                     title: "Billing completion rate",
-                    subtitle: "$completedOrders billed out of $orderTotal processed orders",
+                    subtitle: "$completedOrders closed out of $orderTotal processed orders",
                     progress: completionRate,
                     progressColor: const Color(0xFF0A84C6),
                     trailingValue: "${(completionRate * 100).toStringAsFixed(0)}%",
@@ -434,12 +434,21 @@ class _RevenueTabState extends State<RevenueTab> {
     return StreamBuilder<QuerySnapshot>(
       stream: firestore.collection('kots')
           .where('restaurantId', isEqualTo: restaurantId)
-          .where('status', whereIn: ['Pending', 'Preparing'])
           .snapshots(),
       builder: (context, snapshot) {
-        final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
+        var count = 0;
+        if (snapshot.hasData) {
+          for (final doc in snapshot.data!.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final normalized = OrderStatusUtils.normalizeStatus((data['status'] ?? '').toString());
+            if (normalized == 'placed' || normalized == 'preparing') {
+              count++;
+            }
+          }
+        }
+
         return _buildStripKpiCard(
-          title: "Pending KOTs",
+          title: "Active KOTs",
           value: count.toString(),
           icon: Icons.timer_outlined,
           color: const Color(0xFFD92D20),

@@ -10,6 +10,7 @@ class OrderStatusUtils {
     'active': 'placed',
     'open': 'placed',
     'placed': 'placed',
+    'prepared': 'prepared',
     'preparing': 'preparing',
     'ready': 'served',
     'done': 'served',
@@ -44,8 +45,9 @@ class OrderStatusUtils {
     if (from == to) return true;
 
     final allowed = <String, List<String>>{
-      'placed': ['preparing', 'served', 'cancelled', 'closed'],
-      'preparing': ['served', 'cancelled', 'closed'],
+      'placed': ['preparing', 'prepared', 'served', 'cancelled', 'closed'],
+      'preparing': ['prepared', 'served', 'cancelled', 'closed'],
+      'prepared': ['served', 'cancelled', 'closed'],
       'served': ['closed'],
       'closed': [],
       'cancelled': [],
@@ -75,6 +77,8 @@ class OrderStatusUtils {
         return 'Placed';
       case 'preparing':
         return 'Preparing';
+      case 'prepared':
+        return 'Prepared';
       case 'served':
         return 'Served';
       case 'closed':

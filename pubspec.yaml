@@ -74,6 +74,7 @@ flutter:
 
   assets:
     - assets/branding/app_icon.png
+    - assets/branding/log-bg.png
     - assets/branding/splash_logo.png
     - assets/branding/splash_logo_centered.png
 

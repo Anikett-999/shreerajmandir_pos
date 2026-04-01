@@ -225,117 +225,135 @@ class _LoginScreenState extends State<LoginScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _background,
-      body: SafeArea(
-        child: Consumer<AuthService>(
-          builder: (context, auth, _) {
-            if (auth.isLoading) {
-              return const Center(child: CircularProgressIndicator());
-            }
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.08,
+              child: Image.asset(
+                'assets/branding/log-bg.png',
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              color: _primary.withValues(alpha: 0.08),
+            ),
+          ),
+          SafeArea(
+            child: Consumer<AuthService>(
+              builder: (context, auth, _) {
+                if (auth.isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-            final usePinMode = auth.currentUser != null && auth.hasSavedPin;
+                final usePinMode = auth.currentUser != null && auth.hasSavedPin;
 
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 24),
-                          SizedBox(
-                            width: double.infinity,
-                            child: Center(
-                              child: FadeTransition(
-                                opacity: _logoFade,
-                                child: SlideTransition(
-                                  position: _logoSlide,
-                                  child: ScaleTransition(
-                                    scale: _logoScale,
-                                    child: Container(
-                                      constraints: const BoxConstraints(maxWidth: 300, maxHeight: 130),
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        border: Border.all(color: Colors.black, width: 1.5),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Image.asset(
-                                        'assets/branding/splash_logo.png',
-                                        fit: BoxFit.contain,
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 24),
+                              SizedBox(
+                                width: double.infinity,
+                                child: Center(
+                                  child: FadeTransition(
+                                    opacity: _logoFade,
+                                    child: SlideTransition(
+                                      position: _logoSlide,
+                                      child: ScaleTransition(
+                                        scale: _logoScale,
+                                        child: Container(
+                                          constraints: const BoxConstraints(maxWidth: 300, maxHeight: 130),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            border: Border.all(color: Colors.black, width: 1.5),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Image.asset(
+                                            'assets/branding/splash_logo.png',
+                                            fit: BoxFit.contain,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          FadeTransition(
-                            opacity: _formFade,
-                            child: SlideTransition(
-                              position: _formSlide,
-                              child: Container(
-                                constraints: const BoxConstraints(maxWidth: 430),
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
-                                decoration: BoxDecoration(
-                                  color: _surface,
-                                  borderRadius: BorderRadius.circular(32),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Color.fromRGBO(0, 0, 0, 0.04),
-                                      blurRadius: 30,
-                                      offset: Offset(0, 8),
+                              const SizedBox(height: 18),
+                              FadeTransition(
+                                opacity: _formFade,
+                                child: SlideTransition(
+                                  position: _formSlide,
+                                  child: Container(
+                                    constraints: const BoxConstraints(maxWidth: 430),
+                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
+                                    decoration: BoxDecoration(
+                                      color: _surface,
+                                      borderRadius: BorderRadius.circular(32),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Color.fromRGBO(0, 0, 0, 0.04),
+                                          blurRadius: 30,
+                                          offset: Offset(0, 8),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    _buildFormContent(auth, usePinMode),
-                                    if (auth.profileIssueMessage != null) ...[
-                                      const SizedBox(height: 16),
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.red.withValues(alpha: 0.08),
-                                          borderRadius: BorderRadius.circular(14),
-                                          border: Border.all(
-                                            color: Colors.red.withValues(alpha: 0.25),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        _buildFormContent(auth, usePinMode),
+                                        if (auth.profileIssueMessage != null) ...[
+                                          const SizedBox(height: 16),
+                                          Container(
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red.withValues(alpha: 0.08),
+                                              borderRadius: BorderRadius.circular(14),
+                                              border: Border.all(
+                                                color: Colors.red.withValues(alpha: 0.25),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              auth.profileIssueMessage!,
+                                              style: const TextStyle(
+                                                color: Colors.red,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                        child: Text(
-                                          auth.profileIssueMessage!,
-                                          style: const TextStyle(
-                                            color: Colors.red,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
+                                        ],
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(height: 46),
+                              FadeTransition(
+                                opacity: _badgesFade,
+                                child: SlideTransition(
+                                  position: _badgesSlide,
+                                  child: _buildBottomBadges(),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
                           ),
-                          const SizedBox(height: 46),
-                          FadeTransition(
-                            opacity: _badgesFade,
-                            child: SlideTransition(
-                              position: _badgesSlide,
-                              child: _buildBottomBadges(),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 );
               },
-            );
-          },
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }

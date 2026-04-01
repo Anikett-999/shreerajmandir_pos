@@ -5,6 +5,7 @@ import '../../models/table_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/kot_notification_service.dart';
 import '../../utils/debouncer.dart';
+import '../../utils/order_status_utils.dart';
 import 'profile_details_screen.dart';
 import 'waiter_kot_screen.dart';
 import '../order/order_summary_screen.dart';
@@ -154,7 +155,7 @@ class _TablesGridTabState extends State<TablesGridTab> {
   }
 
   Widget _buildFilters() {
-    final filterOptions = ['All', 'Available', 'placed', 'preparing', 'served'];
+    final filterOptions = ['All', 'placed', 'prepared', 'preparing', 'served', 'closed', 'cancelled'];
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -187,13 +188,15 @@ class _TablesGridTabState extends State<TablesGridTab> {
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-        final tables = snapshot.data!.docs
+        List<TableModel> tables = snapshot.data!.docs
             .map((doc) => TableModel.fromMap(doc.id, doc.data() as Map<String, dynamic>))
-            .where((t) {
-              final tableStatus = _mapTableStatusToOrderStatus(t);
-              return _selectedStatus == 'All' || tableStatus == _selectedStatus.toLowerCase();
-            })
             .toList();
+
+        // Apply status filter
+        if (_selectedStatus != 'All') {
+          // For filter to work, we need to check each table's order status
+          // This will be done during grid building in a separate check
+        }
 
         // Sort tables by table number (parsed from table.name)
         tables.sort((a, b) {
@@ -205,7 +208,7 @@ class _TablesGridTabState extends State<TablesGridTab> {
         });
 
         if (tables.isEmpty) {
-          return const Center(child: Text('No tables found for selected status.'));
+          return const Center(child: Text('No tables found.'));
         }
 
         return LayoutBuilder(
@@ -229,7 +232,7 @@ class _TablesGridTabState extends State<TablesGridTab> {
               ),
               itemCount: tables.length,
               itemBuilder: (context, index) {
-                return _buildTableCard(tables[index]);
+                return _buildFilteredTableCard(tables[index]);
               },
             );
           },
@@ -238,30 +241,45 @@ class _TablesGridTabState extends State<TablesGridTab> {
     );
   }
 
-  Widget _buildTableCard(TableModel table) {
-    Color statusColor;
-    String statusStr;
-    switch (table.status) {
-      case TableStatus.available:
-        statusColor = Colors.green;
-        statusStr = 'Available';
-        break;
-      case TableStatus.occupied:
-        statusColor = Colors.orange;
-        statusStr = 'Occupied';
-        break;
-      case TableStatus.kotSent:
-        statusColor = Colors.blue;
-        statusStr = 'KOT Sent';
-        break;
-      case TableStatus.billRequested:
-        statusColor = Colors.red;
-        statusStr = 'Bill Requested';
-        break;
+  Widget _buildFilteredTableCard(TableModel table) {
+    if (_selectedStatus == 'All') {
+      return _buildTableCard(table);
     }
 
-    // Use a dimmed maroon color for all table card borders
+    // Apply order status filter
+    if (table.status == TableStatus.available) {
+      // Available tables don't have orders, only show if filter is "All"
+      return const SizedBox.shrink();
+    }
+
+    if (table.currentOrderId == null) {
+      return const SizedBox.shrink();
+    }
+
+    // Check order status for filter
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _firestore.collection('orders').doc(table.currentOrderId!).snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+
+        final rawStatus = snapshot.data?.data()?['status']?.toString() ?? 'placed';
+        final normalizedStatus = OrderStatusUtils.normalizeStatus(rawStatus);
+
+        // Use normalized status for comparison
+        if (normalizedStatus.toLowerCase() == _selectedStatus.toLowerCase()) {
+          return _buildTableCard(table);
+        }
+
+        return const SizedBox.shrink();
+      },
+    );
+  }
+
+  Widget _buildTableCard(TableModel table) {
+    // Use a dimmed maroon color for all table card backgrounds
+    const Color cardBackground = Color(0xFFF5E8E8); // Light maroon tint
     const Color borderColor = Color(0x66922224); // #922224 with 40% opacity
+    
     return InkWell(
       onTap: () {
         _debouncer.run(() => _handleTableTap(table));
@@ -269,7 +287,7 @@ class _TablesGridTabState extends State<TablesGridTab> {
       borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardBackground,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: borderColor, width: 2),
           boxShadow: [
@@ -284,21 +302,180 @@ class _TablesGridTabState extends State<TablesGridTab> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(table.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                statusStr,
-                style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12),
-              ),
-            ),
-            // Removed pax/capacity row
+            const SizedBox(height: 12),
+            // Show order status if occupied
+            if (table.status != TableStatus.available && table.currentOrderId != null)
+              _buildOrderStatusBadge(table.currentOrderId!, table.status)
+            else
+              _buildTableStatusBadge(table.status),
           ],
         ),
+      ),
+    );
+  }
+
+  String _fallbackOrderStatusFromTable(TableStatus tableStatus) {
+    switch (tableStatus) {
+      case TableStatus.available:
+        return 'closed';
+      case TableStatus.occupied:
+        return 'placed';
+      case TableStatus.kotSent:
+        return 'preparing';
+      case TableStatus.billRequested:
+        return 'served';
+    }
+  }
+
+  Widget _buildOrderStatusVisual(String normalizedStatus) {
+    final displayStatus = normalizedStatus.toUpperCase();
+    Color bgColor = Colors.grey[200]!;
+    Color fgColor = Colors.grey[800]!;
+    IconData icon = Icons.help;
+
+    switch (normalizedStatus) {
+      case 'placed':
+        bgColor = Colors.yellow[100]!;
+        fgColor = Colors.yellow[900]!;
+        icon = Icons.shopping_cart;
+        break;
+      case 'prepared':
+        bgColor = Colors.orange[100]!;
+        fgColor = Colors.orange[900]!;
+        icon = Icons.check_circle;
+        break;
+      case 'preparing':
+        bgColor = Colors.orange[50]!;
+        fgColor = Colors.orange[800]!;
+        icon = Icons.local_fire_department;
+        break;
+      case 'served':
+        bgColor = Colors.green[100]!;
+        fgColor = Colors.green[900]!;
+        icon = Icons.room_service;
+        break;
+      case 'closed':
+        bgColor = Colors.grey[200]!;
+        fgColor = Colors.grey[800]!;
+        icon = Icons.done_all;
+        break;
+      case 'cancelled':
+        bgColor = Colors.red[100]!;
+        fgColor = Colors.red[900]!;
+        icon = Icons.cancel;
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: fgColor.withOpacity(0.3), width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: fgColor, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            displayStatus,
+            style: TextStyle(color: fgColor, fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrderStatusBadge(String orderId, TableStatus tableStatus) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _firestore.collection('orders').doc(orderId).snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data?.exists == true) {
+          final rawStatus = snapshot.data?.data()?['status']?.toString() ?? 'placed';
+          final normalizedStatus = OrderStatusUtils.normalizeStatus(rawStatus);
+          return _buildOrderStatusVisual(normalizedStatus);
+        }
+
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _firestore
+              .collection('kots')
+              .where('orderId', isEqualTo: orderId)
+              .snapshots(),
+          builder: (context, kotSnapshot) {
+            if (kotSnapshot.hasData && kotSnapshot.data!.docs.isNotEmpty) {
+              final kotDocs = kotSnapshot.data!.docs;
+              QueryDocumentSnapshot<Map<String, dynamic>> latestKot = kotDocs.first;
+              for (final doc in kotDocs.skip(1)) {
+                final currentTs = doc.data()['createdAt'];
+                final latestTs = latestKot.data()['createdAt'];
+                if (currentTs is Timestamp && latestTs is Timestamp && currentTs.compareTo(latestTs) > 0) {
+                  latestKot = doc;
+                }
+              }
+              final rawKotStatus = latestKot.data()['status']?.toString() ?? '';
+              final normalizedKotStatus = OrderStatusUtils.normalizeStatus(rawKotStatus);
+              return _buildOrderStatusVisual(normalizedKotStatus);
+            }
+
+            final fallbackStatus = _fallbackOrderStatusFromTable(tableStatus);
+            return _buildOrderStatusVisual(fallbackStatus);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildTableStatusBadge(TableStatus status) {
+    Color bgColor;
+    Color fgColor;
+    IconData icon;
+    String statusStr;
+
+    switch (status) {
+      case TableStatus.available:
+        bgColor = Colors.green[100]!;
+        fgColor = Colors.green[900]!;
+        icon = Icons.check_circle_outline;
+        statusStr = 'AVAILABLE';
+        break;
+      case TableStatus.occupied:
+        bgColor = Colors.orange[100]!;
+        fgColor = Colors.orange[900]!;
+        icon = Icons.people;
+        statusStr = 'OCCUPIED';
+        break;
+      case TableStatus.kotSent:
+        bgColor = Colors.blue[100]!;
+        fgColor = Colors.blue[900]!;
+        icon = Icons.restaurant;
+        statusStr = 'KOT SENT';
+        break;
+      case TableStatus.billRequested:
+        bgColor = Colors.red[100]!;
+        fgColor = Colors.red[900]!;
+        icon = Icons.receipt_long;
+        statusStr = 'BILL';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: fgColor.withOpacity(0.3), width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: fgColor, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            statusStr,
+            style: TextStyle(color: fgColor, fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+        ],
       ),
     );
   }

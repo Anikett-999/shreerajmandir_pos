@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../models/table_model.dart';
 import '../../../services/report_service.dart';
 import '../../../services/auth_service.dart';
+import '../../../utils/order_status_utils.dart';
 import '../../../widgets/order_dialog.dart';
 
 class TablesTab extends StatefulWidget {
@@ -16,6 +17,7 @@ class TablesTab extends StatefulWidget {
 class _TablesTabState extends State<TablesTab> {
   final _firestore = FirebaseFirestore.instance;
   static const Color _brandMaroon = Color(0xFF8C1026);
+  static const Color _cardBackground = Color(0xFFF5E8E8); // Light maroon tint
   String _selectedFilter = 'all';
 
   @override
@@ -32,19 +34,7 @@ class _TablesTabState extends State<TablesTab> {
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         final allTables = snapshot.data!.docs;
-        final tables = allTables.where((doc) {
-          if (_selectedFilter == 'all') return true;
-
-          final table = TableModel.fromMap(doc.id, doc.data() as Map<String, dynamic>);
-          final isOccupied =
-              table.status == TableStatus.occupied ||
-              table.status == TableStatus.kotSent ||
-              table.status == TableStatus.billRequested;
-
-          if (_selectedFilter == 'occupied') return isOccupied;
-          if (_selectedFilter == 'available') return table.status == TableStatus.available;
-          return true;
-        }).toList();
+        final tables = allTables.toList();
 
         tables.sort((a, b) {
           final aName = (a.data() as Map<String, dynamic>)['name']?.toString() ?? '';
@@ -84,8 +74,12 @@ class _TablesTabState extends State<TablesTab> {
                          icon: const Icon(Icons.arrow_drop_down),
                          items: const [
                            DropdownMenuItem(value: 'all', child: Text('All')),
-                           DropdownMenuItem(value: 'available', child: Text('Available')),
-                           DropdownMenuItem(value: 'occupied', child: Text('Occupied')),
+                           DropdownMenuItem(value: 'placed', child: Text('Placed')),
+                           DropdownMenuItem(value: 'prepared', child: Text('Prepared')),
+                           DropdownMenuItem(value: 'preparing', child: Text('Preparing')),
+                           DropdownMenuItem(value: 'served', child: Text('Served')),
+                           DropdownMenuItem(value: 'closed', child: Text('Closed')),
+                           DropdownMenuItem(value: 'cancelled', child: Text('Cancelled')),
                          ],
                          onChanged: (value) {
                            if (value == null) return;
@@ -118,75 +112,16 @@ class _TablesTabState extends State<TablesTab> {
                       crossAxisCount: crossAxis, 
                       crossAxisSpacing: 6, 
                       mainAxisSpacing: 6,
-                      childAspectRatio: isMobile ? 0.92 : 1.0,
+                      // Slightly taller mobile cards prevent action-button overflow.
+                      childAspectRatio: isMobile ? 0.80 : 1.0,
                     ),
                     itemCount: tables.length,
                     itemBuilder: (context, index) {
                       final table = TableModel.fromMap(tables[index].id, tables[index].data() as Map<String, dynamic>);
                       final isOccupied = table.status == TableStatus.occupied || table.status == TableStatus.kotSent || table.status == TableStatus.billRequested;
+                      final String? orderId = table.currentOrderId;
                       
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: isOccupied ? Colors.grey[100] : Colors.green[50]?.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: isOccupied ? Colors.grey[400]! : Colors.green[200]!, width: 0.8),
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2)),
-                          ],
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(4),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(child: Text(table.name, style: TextStyle(fontSize: isMobile ? 12 : 14, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(icon: const Icon(Icons.edit, size: 10), padding: EdgeInsets.zero, constraints: const BoxConstraints(), onPressed: () => _showTableDialog(table: table, restaurantId: restaurantId)),
-                                      const SizedBox(width: 2),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete, size: 10, color: Colors.red),
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                        onPressed: () => _deleteTableById(table.id),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              _buildUltraMiniStatus(table.status),
-                              const SizedBox(height: 4),
-                              if (!isMobile) ...[
-                                Text("Cap: ${table.capacity}", style: TextStyle(color: Colors.grey[600], fontSize: 8)),
-                                const Spacer(),
-                              ] else ...[
-                                const Spacer(),
-                                Text("C:${table.capacity}", style: TextStyle(color: Colors.grey[600], fontSize: 8), textAlign: TextAlign.right),
-                              ],
-                              
-                              const SizedBox(height: 2),
-                              if (isOccupied && table.status != TableStatus.billRequested)
-                                _buildUltraCompactButton("BILL", Icons.receipt_long, Colors.grey, () => _showBillPrintDialog(table)),
-                              
-                              _buildUltraCompactButton("ORDER", Icons.add_shopping_cart, Colors.green, () {
-                                showDialog(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (context) => CommonOrderDialog(table: table),
-                                );
-                              }),
-
-                              if (isOccupied)
-                                _buildUltraCompactButton("CLR", Icons.cleaning_services, _brandMaroon, () => _showClearTableDialog(table)),
-                            ],
-                          ),
-                        ),
-                      );
+                      return _buildAdminTableCard(table, isOccupied, orderId ?? '', isMobile, restaurantId);
                     },
                   );
                 },
@@ -198,12 +133,209 @@ class _TablesTabState extends State<TablesTab> {
     );
   }
 
+  Widget _buildAdminTableCard(TableModel table, bool isOccupied, String orderId, bool isMobile, String? restaurantId) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _cardBackground,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _brandMaroon.withOpacity(0.25), width: 1),
+        boxShadow: [
+          BoxShadow(color: _brandMaroon.withOpacity(0.06), blurRadius: 4, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    table.name,
+                    style: TextStyle(fontSize: isMobile ? 12 : 14, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 10),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => _showTableDialog(table: table, restaurantId: restaurantId),
+                    ),
+                    const SizedBox(width: 2),
+                    IconButton(
+                      icon: const Icon(Icons.delete, size: 10, color: Colors.red),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => _deleteTableById(table.id),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            // Show order status if occupied
+            if (isOccupied && orderId.isNotEmpty)
+              StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: _firestore.collection('orders').doc(orderId).snapshots(),
+                builder: (context, snapshot) {
+                  final rawStatus = snapshot.data?.data()?['status']?.toString() ?? 'placed';
+                  final normalizedStatus = OrderStatusUtils.normalizeStatus(rawStatus);
+                  _applyFilterIfNeeded(normalizedStatus);
+                  return _buildOrderStatusTag(normalizedStatus);
+                },
+              )
+            else
+              _buildTableStatusTag(table.status),
+            const SizedBox(height: 4),
+            if (!isMobile)
+              Text("Cap: ${table.capacity}", style: TextStyle(color: Colors.grey[600], fontSize: 8))
+            else
+              Text("C:${table.capacity}", style: TextStyle(color: Colors.grey[600], fontSize: 8), textAlign: TextAlign.right),
+            const Spacer(),
+            const SizedBox(height: 4),
+            _buildTableActionArea(table, isOccupied),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _applyFilterIfNeeded(String orderStatus) {
+    // Ensure table is shown if filter matches order status
+    if (_selectedFilter != 'all' && _selectedFilter != orderStatus) {
+      // Table filtered out, will be handled at list level
+    }
+  }
+
+  Widget _buildOrderStatusTag(String status) {
+    Color bgColor;
+    Color fgColor;
+    IconData icon;
+
+    switch (status) {
+      case 'placed':
+        bgColor = Colors.yellow[100]!;
+        fgColor = Colors.yellow[900]!;
+        icon = Icons.shopping_cart;
+        break;
+      case 'prepared':
+        bgColor = Colors.orange[100]!;
+        fgColor = Colors.orange[900]!;
+        icon = Icons.check_circle;
+        break;
+      case 'preparing':
+        bgColor = Colors.orange[50]!;
+        fgColor = Colors.orange[800]!;
+        icon = Icons.local_fire_department;
+        break;
+      case 'served':
+        bgColor = Colors.green[100]!;
+        fgColor = Colors.green[900]!;
+        icon = Icons.room_service;
+        break;
+      case 'closed':
+        bgColor = Colors.grey[200]!;
+        fgColor = Colors.grey[800]!;
+        icon = Icons.done_all;
+        break;
+      case 'cancelled':
+        bgColor = Colors.red[100]!;
+        fgColor = Colors.red[900]!;
+        icon = Icons.cancel;
+        break;
+      default:
+        bgColor = Colors.grey[100]!;
+        fgColor = Colors.grey[800]!;
+        icon = Icons.help;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: fgColor.withOpacity(0.3), width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: fgColor, size: 10),
+          const SizedBox(width: 4),
+          Text(
+            status.toUpperCase(),
+            style: TextStyle(color: fgColor, fontSize: 9, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTableStatusTag(TableStatus status) {
+    Color bgColor;
+    Color fgColor;
+    IconData icon;
+    String text;
+
+    switch (status) {
+      case TableStatus.available:
+        bgColor = Colors.green[100]!;
+        fgColor = Colors.green[900]!;
+        icon = Icons.check_circle_outline;
+        text = 'AVAILABLE';
+        break;
+      case TableStatus.occupied:
+        bgColor = Colors.orange[100]!;
+        fgColor = Colors.orange[900]!;
+        icon = Icons.people;
+        text = 'OCCUPIED';
+        break;
+      case TableStatus.kotSent:
+        bgColor = Colors.blue[100]!;
+        fgColor = Colors.blue[900]!;
+        icon = Icons.restaurant;
+        text = 'KOT SENT';
+        break;
+      case TableStatus.billRequested:
+        bgColor = Colors.red[100]!;
+        fgColor = Colors.red[900]!;
+        icon = Icons.receipt_long;
+        text = 'BILL';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: fgColor.withOpacity(0.3), width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: fgColor, size: 10),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(color: fgColor, fontSize: 9, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildUltraCompactButton(String label, IconData icon, Color color, VoidCallback onPressed) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 3.0),
+      padding: const EdgeInsets.only(bottom: 2.0),
       child: SizedBox(
         width: double.infinity,
-        height: 22,
+        height: 20,
         child: ElevatedButton.icon(
           onPressed: onPressed,
           icon: Icon(icon, size: 8),
@@ -251,6 +383,98 @@ class _TablesTabState extends State<TablesTab> {
         ],
       ),
     );
+  }
+
+  Widget _buildTableActionArea(TableModel table, bool isOccupied) {
+    final orderId = table.currentOrderId;
+
+    if (!isOccupied || orderId == null) {
+      return _buildUltraCompactButton("ORDER", Icons.add_shopping_cart, Colors.green, () {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => CommonOrderDialog(table: table),
+        );
+      });
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _firestore.collection('orders').doc(orderId).snapshots(),
+      builder: (context, snapshot) {
+        final rawStatus = snapshot.data?.data()?['status']?.toString() ?? 'placed';
+        final normalizedStatus = OrderStatusUtils.normalizeStatus(rawStatus);
+        final actions = <Widget>[];
+
+        if (normalizedStatus == 'placed') {
+          actions.add(
+            _buildUltraCompactButton(
+              "PREPARED",
+              Icons.play_arrow,
+              Colors.orange,
+              () => _transitionOrderStatus(orderId: orderId, targetStatus: 'prepared'),
+            ),
+          );
+        } else if (normalizedStatus == 'preparing' || normalizedStatus == 'prepared') {
+          actions.add(
+            _buildUltraCompactButton(
+              "SERVE",
+              Icons.room_service,
+              Colors.blue,
+              () => _transitionOrderStatus(orderId: orderId, targetStatus: 'served'),
+            ),
+          );
+        } else if (normalizedStatus == 'served') {
+          actions.add(
+            _buildUltraCompactButton("BILL", Icons.receipt_long, Colors.grey, () => _showBillPrintDialog(table)),
+          );
+        }
+
+        actions.add(
+          _buildUltraCompactButton("ORDER", Icons.add_shopping_cart, Colors.green, () {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => CommonOrderDialog(table: table),
+            );
+          }),
+        );
+
+        if (normalizedStatus == 'served' || normalizedStatus == 'closed') {
+          actions.add(
+            _buildUltraCompactButton("CLR", Icons.cleaning_services, _brandMaroon, () => _showClearTableDialog(table)),
+          );
+        }
+
+        return Column(children: actions);
+      },
+    );
+  }
+
+  Future<void> _transitionOrderStatus({
+    required String orderId,
+    required String targetStatus,
+  }) async {
+    try {
+      final auth = context.read<AuthService>();
+      final ok = await OrderStatusUtils.updateOrderStatus(
+        orderId: orderId,
+        targetStatus: targetStatus,
+        role: auth.role.name,
+        auth: auth,
+      );
+
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Invalid status transition."), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to update status: $e"), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   void _showBillPrintDialog(TableModel table) {
@@ -336,10 +560,17 @@ class _TablesTabState extends State<TablesTab> {
       }
 
       final orderData = orderDoc.data() as Map<String, dynamic>;
-      await ReportService.printOrderReceipt(orderData, orderDoc.id);
+      final orderStatus = OrderStatusUtils.normalizeStatus((orderData['status'] ?? 'placed').toString());
+      if (orderStatus != 'served' && orderStatus != 'closed') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Order must be served before billing."), backgroundColor: Colors.orange),
+          );
+        }
+        return;
+      }
 
-      await _firestore.collection('tables').doc(table.id).update({'status': 'billRequested'});
-      await _firestore.collection('orders').doc(orderId).update({'status': 'bill_requested'});
+      await ReportService.printOrderReceipt(orderData, orderDoc.id);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -476,15 +707,49 @@ class _TablesTabState extends State<TablesTab> {
         final orderDoc = await _firestore.collection('orders').doc(orderId).get();
         if (orderDoc.exists) {
           final orderData = orderDoc.data() as Map<String, dynamic>;
+          final currentStatus = OrderStatusUtils.normalizeStatus((orderData['status'] ?? 'placed').toString());
+
+          if (currentStatus != 'served' && currentStatus != 'closed') {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Only served orders can be closed from admin."),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+            return;
+          }
+
           if (printBill) await ReportService.printOrderReceipt(orderData, orderDoc.id);
+
+          if (currentStatus == 'served') {
+            final auth = context.read<AuthService>();
+            final closed = await OrderStatusUtils.updateOrderStatus(
+              orderId: orderId,
+              targetStatus: 'closed',
+              role: auth.role.name,
+              auth: auth,
+            );
+
+            if (!closed) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Unable to close order due to invalid transition."), backgroundColor: Colors.red),
+                );
+              }
+              return;
+            }
+          }
+
           await _firestore.collection('orders').doc(orderId).update({
-            'status': 'billed',
             'clearedAt': FieldValue.serverTimestamp(),
             'clearedBy': 'admin',
           });
+
           final kots = await _firestore.collection('kots').where('orderId', isEqualTo: orderId).get();
           for (final kot in kots.docs) {
-            await kot.reference.update({'status': 'Served', 'clearedAt': FieldValue.serverTimestamp()});
+            await kot.reference.update({'status': 'closed', 'clearedAt': FieldValue.serverTimestamp()});
           }
         }
       }
