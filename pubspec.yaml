@@ -93,15 +93,15 @@ flutter_launcher_icons:
 
 flutter_native_splash:
   color: "#ffffff"
-  image: assets/branding/app_icon.png
+  image: assets/branding/splash_logo_centered.png
   android: true
   ios: true
   web: true
-  android_gravity: fill_horizontal
-  ios_content_mode: scaleAspectFit
+  android_gravity: center
+  ios_content_mode: center
   web_image_mode: contain
   android_12:
-    image: assets/branding/app_icon.png
+    image: assets/branding/splash_logo_centered.png
     color: "#ffffff"
 
   # To add assets to your application, add an assets section, like this:

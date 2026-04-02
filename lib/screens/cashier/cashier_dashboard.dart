@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../services/auth_service.dart';
 import '../../services/debug_logger.dart';
 import '../auth/unauthorized_screen.dart';
+import '../home/profile_details_screen.dart';
 import '../../models/table_model.dart';
 import '../../services/report_service.dart';
 import '../../models/menu_item.dart';
@@ -14,6 +15,8 @@ import '../../utils/order_status_utils.dart';
 import '../../utils/table_sort_utils.dart';
 import '../../utils/table_state_sync.dart';
 import '../../widgets/order_dialog.dart';
+import 'cashier_tables_tab.dart';
+import 'recent_bills_screen.dart';
 
 class CashierDashboard extends StatefulWidget {
   const CashierDashboard({super.key});
@@ -23,6 +26,8 @@ class CashierDashboard extends StatefulWidget {
 }
 
 class _CashierDashboardState extends State<CashierDashboard> {
+  static const Color _adminAppBarColor = Color(0xFF922224);
+  static const Color _adminPageTint = Color(0xFFF9F7F5);
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String? _selectedTableId;
   Map<String, dynamic>? _selectedOrderData;
@@ -30,6 +35,49 @@ class _CashierDashboardState extends State<CashierDashboard> {
 
   // Provide a convenient auth getter to avoid forward-reference issues
   AuthService get auth => context.read<AuthService>();
+
+  String _initials(String? email) {
+    if (email == null || email.trim().isEmpty) return 'CA';
+    final local = email.split('@').first.trim();
+    if (local.isEmpty) return 'CA';
+    final parts = local.split(RegExp(r'[._\-\s]+')).where((e) => e.isNotEmpty).toList();
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return local.substring(0, local.length >= 2 ? 2 : 1).toUpperCase();
+  }
+
+  Future<void> _confirmLogout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout from cashier dashboard?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _adminAppBarColor, foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldLogout == true) {
+      auth.logout();
+    }
+  }
+
+  void _openRecentBillsScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RecentBillsScreen()),
+    );
+  }
 
 
   @override
@@ -39,11 +87,15 @@ class _CashierDashboardState extends State<CashierDashboard> {
       return const UnauthorizedScreen();
     }
     final restaurantName = auth.restaurantName ?? "ShreeRajmandir";
+    final userEmail = auth.currentUser?.email;
+    final roleLabel = auth.role.name.toUpperCase();
     final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: _adminPageTint,
       appBar: AppBar(
+        backgroundColor: _adminAppBarColor,
+        foregroundColor: Colors.white,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -72,15 +124,16 @@ class _CashierDashboardState extends State<CashierDashboard> {
         ),
         actions: isMobile
           ? [
-               IconButton(icon: const Icon(Icons.refresh), onPressed: () => setState(() {}), tooltip: "Refresh Data"),
+              IconButton(icon: const Icon(Icons.refresh), onPressed: () => setState(() {}), tooltip: "Refresh Data"),
+              IconButton(icon: const Icon(Icons.logout), onPressed: _confirmLogout, tooltip: "Logout"),
             ]
           : [
-              IconButton(icon: const Icon(Icons.receipt_long), onPressed: () => _showOrderOversightDialog(), tooltip: "Recent Bills / Reprint"),
+              IconButton(icon: const Icon(Icons.receipt_long), onPressed: _openRecentBillsScreen, tooltip: "Recent Bills / Reprint"),
               IconButton(icon: const Icon(Icons.history), onPressed: () => _showSessionHistory(), tooltip: "Session History"),
               IconButton(icon: const Icon(Icons.settings), onPressed: () => _showManagementMenu(), tooltip: "Menu/Table Setup"),
               IconButton(icon: const Icon(Icons.refresh), onPressed: () => setState(() {}), tooltip: "Refresh Data"),
               const SizedBox(width: 8),
-                    IconButton(icon: const Icon(Icons.logout), onPressed: () => auth.logout(), tooltip: "Logout"),
+              IconButton(icon: const Icon(Icons.logout), onPressed: _confirmLogout, tooltip: "Logout"),
               const SizedBox(width: 16),
             ],
       ),
@@ -88,17 +141,63 @@ class _CashierDashboardState extends State<CashierDashboard> {
         child: Column(
           children: [
             DrawerHeader(
-              decoration: BoxDecoration(color: const Color(0xFF800000)),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.point_of_sale, size: 48, color: Colors.white),
-                    const SizedBox(height: 10),
-                    Text(restaurantName.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-                    const Text("CASHIER PANEL", style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  ],
-                ),
+              decoration: const BoxDecoration(color: _adminAppBarColor),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Colors.white,
+                        child: Text(
+                          _initials(userEmail),
+                          style: const TextStyle(color: _adminAppBarColor, fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              restaurantName,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              roleLabel,
+                              style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.4),
+                            ),
+                            if (userEmail != null)
+                              Text(
+                                userEmail,
+                                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileDetailsScreen()));
+                    },
+                    icon: const Icon(Icons.person_outline, color: Colors.white, size: 18),
+                    label: const Text('View Profile Details', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      minimumSize: Size.zero,
+                    ),
+                  ),
+                ],
               ),
             ),
             ListTile(
@@ -106,7 +205,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
               title: const Text('Recent Bills'),
               onTap: () {
                 Navigator.pop(context);
-                _showOrderOversightDialog();
+                _openRecentBillsScreen();
               },
             ),
             ListTile(
@@ -129,7 +228,10 @@ class _CashierDashboardState extends State<CashierDashboard> {
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
               title: const Text('Logout', style: TextStyle(color: Colors.red)),
-              onTap: () => auth.logout(),
+              onTap: () {
+                Navigator.pop(context);
+                _confirmLogout();
+              },
             ),
           ],
         ),
@@ -138,35 +240,24 @@ class _CashierDashboardState extends State<CashierDashboard> {
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= 800;
 
-          // Sub-header stats bar (shown in all layouts)
-          final statsBar = Container(
-            width: double.infinity,
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: _buildCollectionCounter(),
-            ),
-          );
-
+          // Simplified layout: remove stats and banners above the tables.
           if (isWide) {
-            // Wide/Desktop: side-by-side layout
+            // Wide/Desktop: side-by-side layout — tables on left, live KOT feed on right
             return Row(
               children: [
                 Expanded(
                   flex: 3,
                   child: Column(
                     children: [
-                      statsBar,
-                      _buildMidnightResetBanner(restaurantId),
-                      Expanded(child: _buildTableGrid(restaurantId)),
+                      // Tables UI (admin-like, restricted)
+                      const Expanded(child: CashierTablesTab()),
                     ],
                   ),
                 ),
                 Container(
                   width: 400,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _adminPageTint,
                     border: Border(left: BorderSide(color: Colors.grey[200]!)),
                   ),
                   child: _buildLiveKotFeed(restaurantId),
@@ -174,94 +265,15 @@ class _CashierDashboardState extends State<CashierDashboard> {
               ],
             );
           } else {
-            // Mobile: Tab layout
-            return DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  statsBar,
-                  _buildMidnightResetBanner(restaurantId),
-                  Container(
-                    color: Colors.white,
-                    child: TabBar(
-                      labelColor: const Color(0xFF800000),
-                      unselectedLabelColor: Colors.grey,
-                      indicatorColor: const Color(0xFF800000),
-                      tabs: const [
-                        Tab(icon: Icon(Icons.table_bar), text: "Tables"),
-                        Tab(icon: Icon(Icons.kitchen), text: "KOT Feed"),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        _buildTableGrid(restaurantId),
-                        _buildLiveKotFeed(restaurantId),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
+            // Mobile: show the tables UI directly under the app bar/drawer.
+            return const SafeArea(child: CashierTablesTab());
           }
         },
       ),
     );
   }
 
-  Widget _buildCollectionCounter() {
-    final restaurantId = auth.restaurantId;
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final docId = "${restaurantId}_$today";
-    
-    return StreamBuilder<DocumentSnapshot>(
-      stream: _firestore.collection('daily_collections').doc(docId).snapshots(),
-      builder: (context, snapshot) {
-        double net = 0;
-        double gross = 0;
-        double refunds = 0;
-        int bills = 0;
-
-        if (snapshot.hasData && snapshot.data!.exists) {
-          final data = snapshot.data!.data() as Map<String, dynamic>;
-          net = (data['netCollection'] ?? 0).toDouble();
-          gross = (data['grossCollection'] ?? 0).toDouble();
-          refunds = (data['refundTotal'] ?? 0).toDouble();
-          bills = data['billCount'] ?? 0;
-        }
-
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildStatChip("Net: ₹${net.toStringAsFixed(0)}", Colors.green),
-              _buildStatChip("Gross: ₹${gross.toStringAsFixed(0)}", Colors.blue),
-              _buildStatChip("Refunds: ₹${refunds.toStringAsFixed(0)}", Colors.red),
-              _buildStatChip("Bills: $bills", Colors.orange),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildStatChip(String label, Color color) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.bold),
-      ),
-    );
-  }
+  // Collection counter and stat chips removed for Cashier simplified UI.
 
   Widget _buildTableGrid(String? restaurantId) {
     return StreamBuilder<QuerySnapshot>(
@@ -596,30 +608,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
     );
   }
 
-  Widget _buildMidnightResetBanner(String? restaurantId) {
-    if (restaurantId == null) return const SizedBox();
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final docId = "${restaurantId}_$today";
-    return StreamBuilder<DocumentSnapshot>(
-      stream: _firestore.collection('daily_collections').doc(docId).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data!.exists) return const SizedBox();
-        return Container(
-          width: double.infinity,
-          color: Colors.orange[100],
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-          child: Row(
-            children: [
-              const Icon(Icons.warning, color: Colors.orange),
-              const SizedBox(width: 12),
-              const Expanded(child: Text("New day detected. Please refresh to start a new collection session.")),
-              TextButton(onPressed: () => setState(() {}), child: const Text("REFRESH")),
-            ],
-          ),
-        );
-      },
-    );
-  }
+  // Midnight reset banner removed for Cashier simplified UI.
 
   void _showSessionHistory() {
     final restaurantId = auth.restaurantId;

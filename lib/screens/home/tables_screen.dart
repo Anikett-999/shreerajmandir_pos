@@ -88,7 +88,7 @@ class _TablesScreenState extends State<TablesScreen> {
                       actions: [
                         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
                         ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF922224)),
                           onPressed: () => Navigator.pop(context, true),
                           child: const Text('Logout'),
                         ),

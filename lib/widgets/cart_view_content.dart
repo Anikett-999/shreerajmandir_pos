@@ -247,10 +247,11 @@ class _CartViewContentState extends State<CartViewContent> {
         final orderRef = firestore.collection('orders').doc();
         orderId = orderRef.id;
         isOrderCreated = true;
+        final waiterName = auth.currentUser?.email?.split('@')[0] ?? 'Waiter';
         batch.set(orderRef, {
           'tableId': cart.tableId,
           'tableName': (tableDoc.data() as Map<String, dynamic>)['name'] ?? 'Unknown',
-          'waiterName': 'Waiter',
+          'waiterName': waiterName,
           'status': 'placed',
           'restaurantId': restaurantId,
           if (restaurantCode != null) 'restaurantCode': restaurantCode,
@@ -280,17 +281,10 @@ class _CartViewContentState extends State<CartViewContent> {
         'specialInstructions': cartItem.specialInstructions,
       }).toList();
 
-      batch.set(kotRef, {
-        'orderId': orderId,
-        'tableId': cart.tableId,
-        'tableName': (tableDoc.data() as Map<String, dynamic>)['name'] ?? 'Unknown',
-        'status': 'placed',
-        'restaurantId': restaurantId,
-        if (restaurantCode != null) 'restaurantCode': restaurantCode,
-        'items': kotItems,
-        'createdAt': FieldValue.serverTimestamp(),
-        'kotNumber': kotId.substring(0, 6).toUpperCase(),
-      });
+      // Note: do not write the KOT document yet. We'll commit order/items first,
+      // then call the shared printing pipeline (as Cashier does), then create
+      // the KOT document. This mirrors Cashier's behavior and ensures the
+      // platform print preview opens reliably.
 
       final itemsRef = firestore.collection('orders').doc(orderId).collection('items');
       for (var cartItem in cart.items) {
@@ -310,6 +304,59 @@ class _CartViewContentState extends State<CartViewContent> {
       }
 
       await batch.commit();
+
+      // At this point order and order-items are persisted. Now attempt to print
+      // the KOT using the shared ReportService (same method Cashier uses).
+      // Do not block creating the KOT document on printing failure.
+      final kotData = {
+        'tableName': tableDoc.exists ? (tableDoc.data() as Map<String, dynamic>)['name'] : 'Unknown',
+        'items': cart.items.map((i) => {
+          'name': i.item.name,
+          'quantity': i.quantity,
+          'price': i.item.price,
+        }).toList(),
+      };
+      try {
+        DebugLogger.logEvent(event: 'kot_print_invoked', data: {'orderId': orderId, 'kotId': kotId});
+        print('KOT print invoked for order: $orderId, kot: $kotId');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Sending KOT to printer...'),
+            duration: Duration(seconds: 3),
+          ));
+        }
+        await ReportService.printKOTReceipt(kotData, orderId);
+        DebugLogger.logEvent(event: 'kot_print_finished', data: {'orderId': orderId, 'kotId': kotId, 'status': 'success'});
+        print('KOT print finished for order: $orderId');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('KOT printed successfully'),
+            duration: Duration(seconds: 2),
+          ));
+        }
+      } catch (e) {
+        DebugLogger.logEvent(event: 'kot_print_finished', data: {'orderId': orderId, 'kotId': kotId, 'status': 'failed', 'error': e.toString()});
+        print('KOT print failed for order: $orderId -> $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('KOT saved but printing failed: $e'),
+            backgroundColor: Colors.orange,
+          ));
+        }
+      }
+
+      // Now create the KOT document referencing the same kotId used in order items.
+      await firestore.collection('kots').doc(kotId).set({
+        'orderId': orderId,
+        'tableId': cart.tableId,
+        'tableName': (tableDoc.data() as Map<String, dynamic>)['name'] ?? 'Unknown',
+        'status': 'placed',
+        'restaurantId': restaurantId,
+        if (restaurantCode != null) 'restaurantCode': restaurantCode,
+        'items': kotItems,
+        'createdAt': FieldValue.serverTimestamp(),
+        'kotNumber': kotId.substring(0, 6).toUpperCase(),
+      });
 
       // Table lock released after order/KOT created
       DebugLogger.logEvent(
@@ -363,16 +410,8 @@ class _CartViewContentState extends State<CartViewContent> {
         },
       );
       
-      // Auto-Print KOT for Waiter
-      final kotData = {
-        'tableName': tableDoc.exists ? (tableDoc.data() as Map<String, dynamic>)['name'] : 'Unknown',
-        'items': cart.items.map((i) => {
-          'name': i.item.name,
-          'quantity': i.quantity,
-          'price': i.item.price,
-        }).toList(),
-      };
-      await ReportService.printKOTReceipt(kotData, orderId);
+      // Printing already attempted above (matches Cashier flow). No scheduled
+      // duplicate printing here.
 
       DebugLogger.logEvent(
         event: 'kot_sent',

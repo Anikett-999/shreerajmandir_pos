@@ -1,8 +1,10 @@
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'debug_logger.dart';
 
 enum ReportGranularity { daily, monthly, yearly }
 
@@ -100,6 +102,19 @@ class ReportService {
   // ── KOT RECEIPT ─────────────────────────────────────────────────────────
   static Future<void> printKOTReceipt(
       Map<String, dynamic> data, String orderId) async {
+    DebugLogger.logEvent(event: 'printKOTReceipt_enter', data: {'orderId': orderId, 'isWeb': kIsWeb});
+    print('ReportService.printKOTReceipt: enter for order $orderId, isWeb=$kIsWeb');
+    try {
+      final info = await Printing.info();
+      DebugLogger.logEvent(event: 'printing_info', data: {
+        'orderId': orderId,
+        'canPrint': info.canPrint,
+      });
+      print('Printing.info for order $orderId: canPrint=${info.canPrint}');
+    } catch (e) {
+      DebugLogger.logEvent(event: 'printing_info_error', data: {'orderId': orderId, 'error': e.toString()});
+      print('Printing.info failed: $e');
+    }
     final pdf = pw.Document();
     final items = data['items'] as List;
 
@@ -145,10 +160,14 @@ class ReportService {
       ),
     );
 
+    DebugLogger.logEvent(event: 'printKOTReceipt_before_layout', data: {'orderId': orderId});
+    print('ReportService.printKOTReceipt: calling Printing.layoutPdf for order $orderId');
     await Printing.layoutPdf(
       onLayout: (_) async => pdf.save(),
       format: _thermalFormat,
     );
+    DebugLogger.logEvent(event: 'printKOTReceipt_complete', data: {'orderId': orderId});
+    print('ReportService.printKOTReceipt: complete for order $orderId');
   }
 
   // ── ORDER RECEIPT (waiter copy) ──────────────────────────────────────────

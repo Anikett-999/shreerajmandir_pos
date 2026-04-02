@@ -560,7 +560,7 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
        return;
      }
 
-    final waiterDisplayName = auth.role == UserRole.admin ? "Admin (${auth.currentUser?.email?.split('@')[0] ?? 'Admin'})" : "Cashier";
+    final waiterDisplayName = auth.currentUser?.email?.split('@')[0] ?? 'Waiter';
      final total = _selectedItems.fold<double>(0, (sum, i) => sum + (i.item.price * i.quantity));
 
      final batch = firestore.batch();
@@ -600,21 +600,10 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
         });
      }
 
-     final kotRef = firestore.collection('kots').doc();
-     batch.set(kotRef, {
-        'orderId': orderRef.id,
-        'tableId': widget.table.id,
-        'tableName': widget.table.name,
-        'status': 'placed',
-        'restaurantId': restaurantId,
-        if (restaurantCode != null) 'restaurantCode': restaurantCode,
-        'createdAt': FieldValue.serverTimestamp(),
-        'waiterName': waiterDisplayName,
-        'items': _selectedItems.map((i) => {
-           'name': i.item.name,
-           'quantity': i.quantity,
-        }).toList(),
-     });
+      final kotRef = firestore.collection('kots').doc();
+      final kotId = kotRef.id;
+      // Defer creating the KOT document until after printing to match Cashier
+      // behavior: save order/items first, then print, then add the KOT doc.
 
      // Ensure table state follows the new order state (active -> occupied)
      await TableStateSync.syncTableForOrderChange(
@@ -627,6 +616,60 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
      );
 
      await batch.commit();
+
+     // Prepare KOT payload for printing
+     final kotData = {
+       'tableName': widget.table.name,
+       'items': _selectedItems.map((i) => {
+         'name': i.item.name,
+         'quantity': i.quantity,
+         'price': i.item.price,
+       }).toList(),
+     };
+      try {
+        DebugLogger.logEvent(event: 'kot_print_invoked', data: {'orderId': orderRef.id, 'kotId': kotId});
+        print('KOT print invoked for order: ${orderRef.id}, kot: $kotId');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Sending KOT to printer...'),
+            duration: Duration(seconds: 3),
+          ));
+        }
+        await ReportService.printKOTReceipt(kotData, orderRef.id);
+        DebugLogger.logEvent(event: 'kot_print_finished', data: {'orderId': orderRef.id, 'kotId': kotId, 'status': 'success'});
+        print('KOT print finished for order: ${orderRef.id}');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('KOT printed successfully'),
+            duration: Duration(seconds: 2),
+          ));
+        }
+      } catch (e) {
+        DebugLogger.logEvent(event: 'kot_print_finished', data: {'orderId': orderRef.id, 'kotId': kotId, 'status': 'failed', 'error': e.toString()});
+        print('KOT print failed for order: ${orderRef.id} -> $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('KOT saved but printing failed: $e'),
+            backgroundColor: Colors.orange,
+          ));
+        }
+      }
+
+     // Persist the KOT document now that printing was attempted
+     await firestore.collection('kots').doc(kotId).set({
+       'orderId': orderRef.id,
+       'tableId': widget.table.id,
+       'tableName': widget.table.name,
+       'status': 'placed',
+       'restaurantId': restaurantId,
+       if (restaurantCode != null) 'restaurantCode': restaurantCode,
+       'createdAt': FieldValue.serverTimestamp(),
+       'waiterName': waiterDisplayName,
+       'items': _selectedItems.map((i) => {
+         'name': i.item.name,
+         'quantity': i.quantity,
+       }).toList(),
+     });
 
      OrderStatusUtils.logActiveStatusWrite(
        auth: auth,
@@ -663,17 +706,6 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
          'itemCount': _selectedItems.length,
        },
      );
-
-     final kotData = {
-        'tableName': widget.table.name,
-        'items': _selectedItems.map((i) => {
-           'name': i.item.name,
-           'quantity': i.quantity,
-           'price': i.item.price,
-        }).toList(),
-     };
-     
-     await ReportService.printKOTReceipt(kotData, orderRef.id);
 
      DebugLogger.logEvent(
        event: 'kot_sent',
