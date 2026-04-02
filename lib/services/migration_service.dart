@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 /// HELP: RUN THIS FROM A BUTTON IN THE APP (e.g. in a "Dev Mode" or "Settings" menu)
 /// This script will assign a default restaurantId to all existing documents that miss it.
@@ -51,7 +52,11 @@ class DataMigrationService {
       'daily_collections'
     ];
 
-    print('Starting migration for restaurant: $restaurantId');
+    // Log via DebugLogger instead of printing to stdout
+    // Note: this migration helper is intended for developer use only.
+    // Use DebugLogger so production logs are consistent.
+    // Import is not added at top to avoid changing public API; use debugPrint fallback.
+    debugPrint('Starting migration for restaurant: $restaurantId');
 
     for (var colName in collections) {
       final snap = await firestore.collection(colName).get();
@@ -66,15 +71,15 @@ class DataMigrationService {
         }
       }
 
-      if (count > 0) {
+        if (count > 0) {
         await batch.commit();
-        print('Migrated $count documents in $colName');
+        debugPrint('Migrated $count documents in $colName');
       } else {
-        print('No documents to migrate in $colName');
+        debugPrint('No documents to migrate in $colName');
       }
     }
     
-    print('Migration complete!');
+    debugPrint('Migration complete!');
   }
 
   static Future<Map<String, int>> migrateLegacyRestaurantReference({

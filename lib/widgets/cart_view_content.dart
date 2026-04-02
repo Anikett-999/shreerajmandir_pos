@@ -318,31 +318,25 @@ class _CartViewContentState extends State<CartViewContent> {
       };
       try {
         DebugLogger.logEvent(event: 'kot_print_invoked', data: {'orderId': orderId, 'kotId': kotId});
-        print('KOT print invoked for order: $orderId, kot: $kotId');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Sending KOT to printer...'),
-            duration: Duration(seconds: 3),
-          ));
-        }
-        await ReportService.printKOTReceipt(kotData, orderId);
+        // UI feedback: notify user that printing started
+        mounted ? ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Sending KOT to printer...'),
+          duration: Duration(seconds: 3),
+        )) : null;
+        await ReportService.printKOT(kotData, orderId);
         DebugLogger.logEvent(event: 'kot_print_finished', data: {'orderId': orderId, 'kotId': kotId, 'status': 'success'});
-        print('KOT print finished for order: $orderId');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('KOT printed successfully'),
-            duration: Duration(seconds: 2),
-          ));
-        }
+        // UI feedback: notify user that printing succeeded
+        mounted ? ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('KOT printed successfully'),
+          duration: Duration(seconds: 2),
+        )) : null;
       } catch (e) {
         DebugLogger.logEvent(event: 'kot_print_finished', data: {'orderId': orderId, 'kotId': kotId, 'status': 'failed', 'error': e.toString()});
-        print('KOT print failed for order: $orderId -> $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('KOT saved but printing failed: $e'),
-            backgroundColor: Colors.orange,
-          ));
-        }
+        // UI feedback: notify user that printing failed
+        mounted ? ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('KOT saved but printing failed: $e'),
+          backgroundColor: Colors.orange,
+        )) : null;
       }
 
       // Now create the KOT document referencing the same kotId used in order items.

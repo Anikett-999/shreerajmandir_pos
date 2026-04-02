@@ -16,6 +16,13 @@ class ReportService {
     marginAll: 6,
   );
 
+  // 58 mm thermal roll (approx points)
+  static const _mm58Format = PdfPageFormat(
+    58 * 2.8346456693, // 58 mm -> points
+    100 * PdfPageFormat.cm,
+    marginAll: 6,
+  );
+
   // Light dashed separator
   static pw.Widget _dash() => pw.Padding(
         padding: const pw.EdgeInsets.symmetric(vertical: 2),
@@ -102,72 +109,94 @@ class ReportService {
   // ── KOT RECEIPT ─────────────────────────────────────────────────────────
   static Future<void> printKOTReceipt(
       Map<String, dynamic> data, String orderId) async {
-    DebugLogger.logEvent(event: 'printKOTReceipt_enter', data: {'orderId': orderId, 'isWeb': kIsWeb});
-    print('ReportService.printKOTReceipt: enter for order $orderId, isWeb=$kIsWeb');
-    try {
-      final info = await Printing.info();
-      DebugLogger.logEvent(event: 'printing_info', data: {
-        'orderId': orderId,
-        'canPrint': info.canPrint,
-      });
-      print('Printing.info for order $orderId: canPrint=${info.canPrint}');
-    } catch (e) {
-      DebugLogger.logEvent(event: 'printing_info_error', data: {'orderId': orderId, 'error': e.toString()});
-      print('Printing.info failed: $e');
-    }
+    // Backwards-compatible shim: call the new canonical printKOT
+    await printKOT(data, orderId);
+  }
+
+  // ── Centralized KOT print function (standardized format) ──────────────
+  static Future<void> printKOT(Map<String, dynamic> data, String orderId) async {
+    DebugLogger.logEvent(event: 'printKOT_enter', data: {'orderId': orderId});
+
     final pdf = pw.Document();
-    final items = data['items'] as List;
+    final items = (data['items'] as List?) ?? [];
 
     final roboto = await PdfGoogleFonts.robotoRegular();
     final robotoBold = await PdfGoogleFonts.robotoBold();
     final theme = pw.ThemeData.withFont(base: roboto, bold: robotoBold);
 
+    // Steward formatting helper
+    String _formatStewardName(String? raw) {
+      if (raw == null) return '';
+      final t = raw.trim();
+      if (t.length > 5) return t.substring(0, 5).toUpperCase();
+      return t.toUpperCase();
+    }
+
+    final steward = _formatStewardName(data['waiterName']?.toString() ?? data['steward']?.toString());
+
+    // Date formatting: use createdAt if present
+    final date = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final dateStr = DateFormat('dd-MMM-yyyy HH:mm:ss').format(date);
+
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: _thermalFormat,
+        pageFormat: _mm58Format,
         margin: const pw.EdgeInsets.all(6),
         theme: theme,
         build: (pw.Context context) => [
-          pw.Center(
-            child: pw.Text("KOT",
-                style: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold, fontSize: 22)),
-          ),
-          _thickDash(),
-          pw.Text("TABLE: ${data['tableName']}",
-              style: pw.TextStyle(
-                  fontWeight: pw.FontWeight.bold, fontSize: 16)),
-          pw.Text("Order #: ${orderId.substring(0, 8)}",
-              style: const pw.TextStyle(fontSize: 8)),
-          _thickDash(),
+          // Header
+          pw.Center(child: pw.Text('KOT', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 22))),
+          pw.SizedBox(height: 6),
+          pw.Center(child: pw.Text(dateStr, style: const pw.TextStyle(fontSize: 9))),
+          pw.SizedBox(height: 8),
+          pw.Center(child: pw.Text('TABLE ${data['tableName']}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12))),
+          pw.SizedBox(height: 4),
+          pw.Center(child: pw.Text('Steward: ${steward}', style: const pw.TextStyle(fontSize: 9))),
+          pw.SizedBox(height: 6),
+          pw.Text('-' * 32, style: const pw.TextStyle(fontSize: 8)),
+          pw.SizedBox(height: 6),
+
+          // Header row
+          pw.Row(children: [
+            pw.Expanded(child: pw.Text('Item', style: const pw.TextStyle(fontSize: 9))),
+            pw.Text('Qty', style: const pw.TextStyle(fontSize: 9)),
+          ]),
+          pw.SizedBox(height: 4),
+          pw.Text('-' * 32, style: const pw.TextStyle(fontSize: 8)),
+          pw.SizedBox(height: 6),
+
+          // Items
           ...items.map((item) {
-            final quantity = (item['quantity'] ?? 0).toInt();
+            final qty = (item['quantity'] ?? 0).toString();
+            final category = (item['category'] ?? item['cat'] ?? '').toString();
+            final name = (item['name'] ?? item['itemName'] ?? '').toString();
+            final left = (category.isNotEmpty ? '${category} - ${name}' : name);
             return pw.Padding(
-              padding: const pw.EdgeInsets.symmetric(vertical: 3),
-              child: pw.Text("${quantity}x  ${item['name']}",
-                  style: pw.TextStyle(
-                      fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              padding: const pw.EdgeInsets.symmetric(vertical: 2),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Expanded(child: pw.Text(left, style: const pw.TextStyle(fontSize: 9))),
+                  pw.SizedBox(width: 28, child: pw.Text(qty, textAlign: pw.TextAlign.right, style: const pw.TextStyle(fontSize: 9))),
+                ],
+              ),
             );
           }),
-          _thickDash(),
-          pw.Center(
-            child: pw.Text(
-                DateFormat('dd MMM yyyy  hh:mm a').format(DateTime.now()),
-                style: const pw.TextStyle(fontSize: 7)),
-          ),
+
+          pw.SizedBox(height: 6),
+          pw.Text('-' * 32, style: const pw.TextStyle(fontSize: 8)),
+          pw.SizedBox(height: 8),
+
+          // Footer
+          pw.Center(child: pw.Text('ShreeRajmandir POS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))),
           pw.SizedBox(height: 8),
         ],
       ),
     );
 
-    DebugLogger.logEvent(event: 'printKOTReceipt_before_layout', data: {'orderId': orderId});
-    print('ReportService.printKOTReceipt: calling Printing.layoutPdf for order $orderId');
-    await Printing.layoutPdf(
-      onLayout: (_) async => pdf.save(),
-      format: _thermalFormat,
-    );
-    DebugLogger.logEvent(event: 'printKOTReceipt_complete', data: {'orderId': orderId});
-    print('ReportService.printKOTReceipt: complete for order $orderId');
+    DebugLogger.logEvent(event: 'printKOT_before_layout', data: {'orderId': orderId});
+    await Printing.layoutPdf(onLayout: (_) async => pdf.save(), format: _mm58Format);
+    DebugLogger.logEvent(event: 'printKOT_complete', data: {'orderId': orderId});
   }
 
   // ── ORDER RECEIPT (waiter copy) ──────────────────────────────────────────

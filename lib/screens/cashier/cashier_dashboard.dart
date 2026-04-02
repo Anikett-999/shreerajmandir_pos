@@ -1142,7 +1142,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
           'price': item['price'],
         }],
       };
-      await ReportService.printKOTReceipt(kotData, orderId);
+      await ReportService.printKOT(kotData, orderId);
 
       await _firestore.collection('kots').add({
         'tableId': orderData['tableId'],
@@ -1688,7 +1688,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                         }
                                       ],
                                     };
-                                    await ReportService.printKOTReceipt(kotData, orderId);
+                                    await ReportService.printKOT(kotData, orderId);
 
                                     await _firestore.collection('kots').add({
                                       'tableId': orderData['tableId'],
