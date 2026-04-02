@@ -617,14 +617,16 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
 
      await batch.commit();
 
-     // Prepare KOT payload for printing
+    // Prepare KOT payload for printing (reuse existing `auth` variable)
      final kotData = {
        'tableName': widget.table.name,
        'items': _selectedItems.map((i) => {
          'name': i.item.name,
+        'category': i.item.category,
          'quantity': i.quantity,
          'price': i.item.price,
        }).toList(),
+       'printerName': auth.currentUser?.displayName ?? auth.currentUser?.email?.split('@')[0] ?? '',
      };
       try {
         DebugLogger.logEvent(event: 'kot_print_invoked', data: {'orderId': orderRef.id, 'kotId': kotId});

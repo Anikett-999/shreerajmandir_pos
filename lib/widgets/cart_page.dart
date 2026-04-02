@@ -130,9 +130,11 @@ class _CartPageState extends State<CartPage> {
         'tableName': (tableDoc.data() as Map<String, dynamic>)['name'] ?? 'Unknown',
         'items': cart.items.map((i) => {
           'name': i.item.name,
+          'category': i.item.category,
           'quantity': i.quantity,
           'price': i.item.price,
         }).toList(),
+        'printerName': auth.currentUser?.displayName ?? auth.currentUser?.email?.split('@')[0] ?? 'Waiter',
       };
       try {
         DebugLogger.logEvent(event: 'kot_print_invoked', data: {'orderId': orderId, 'kotId': kotId});

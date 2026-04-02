@@ -312,9 +312,11 @@ class _CartViewContentState extends State<CartViewContent> {
         'tableName': tableDoc.exists ? (tableDoc.data() as Map<String, dynamic>)['name'] : 'Unknown',
         'items': cart.items.map((i) => {
           'name': i.item.name,
+          'category': i.item.category,
           'quantity': i.quantity,
           'price': i.item.price,
         }).toList(),
+        'printerName': waiterName,
       };
       try {
         DebugLogger.logEvent(event: 'kot_print_invoked', data: {'orderId': orderId, 'kotId': kotId});

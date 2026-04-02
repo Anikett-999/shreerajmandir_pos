@@ -1,97 +1,110 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
 
-// Generates a sample KOT PDF and writes to build/kot_preview.pdf
+// Generates a KOT preview PDF and writes to build/kot_preview.pdf
 // Run: dart run tools/generate_kot_preview.dart
 
-void main() async {
-  final outputPath = 'build/kot_preview.pdf';
+Future<Uint8List> generateKotPreviewPdf({
+  required String kotNumber,
+  required String tableNumber,
+  required String stewardRaw,
+  required List<Map<String, dynamic>> items,
+}) async {
   final doc = pw.Document();
 
-  // Sample data per your request
-  final data = {
-    'tableName': '1',
-    'waiterName': 'ANIKE',
-    'createdAt': DateTime.now(),
-    'items': [
-      {'category': 'Scoops', 'name': 'Vanilla', 'quantity': 2},
-      {'category': 'Cone', 'name': 'Chocolate', 'quantity': 1},
-      {'category': 'Drinks', 'name': 'Mango Juice', 'quantity': 1},
-    ],
-  };
+  // Steward cleaning
+  String steward = stewardRaw.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+  if (steward.length > 5) steward = steward.substring(0, 5);
 
   // 58 mm in points
   final pageWidth = 58 * 2.8346456693;
   final pageFormat = PdfPageFormat(pageWidth, 100 * PdfPageFormat.cm, marginAll: 6);
 
-  String formatSteward(String raw) {
-    final t = raw.trim();
-    if (t.length > 5) return t.substring(0, 5).toUpperCase();
-    return t.toUpperCase();
-  }
+  final pw.TextStyle headerBold8 = pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold);
+  final pw.TextStyle text8 = pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.normal);
+  final pw.TextStyle footerBold6 = pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold);
 
-  final steward = formatSteward(data['waiterName']?.toString() ?? '');
-  final date = data['createdAt'] as DateTime;
-  final dateStr = DateFormat('dd-MMM-yyyy HH:mm:ss').format(date);
+  final dateStr = DateFormat('dd-MMM-yyyy HH:mm:ss').format(DateTime.now());
 
   doc.addPage(
     pw.MultiPage(
       pageFormat: pageFormat,
       margin: const pw.EdgeInsets.all(6),
       build: (ctx) => [
-        pw.Center(
-            child: pw.Text('KOT', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 22))),
-        pw.SizedBox(height: 6),
-        pw.Center(child: pw.Text(dateStr, style: const pw.TextStyle(fontSize: 9))),
-        pw.SizedBox(height: 8),
-        pw.Center(child: pw.Text('TABLE ${data['tableName']}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12))),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Row(children: [pw.Text('KOT: ', style: headerBold8), pw.Text(kotNumber, style: headerBold8)]),
+            pw.Row(children: [pw.Text('TABLE: ', style: headerBold8), pw.Text(tableNumber, style: headerBold8)]),
+          ],
+        ),
+
         pw.SizedBox(height: 4),
-        pw.Center(child: pw.Text('Steward: $steward', style: const pw.TextStyle(fontSize: 9))),
-        pw.SizedBox(height: 6),
-        pw.Text('-' * 32, style: const pw.TextStyle(fontSize: 8)),
-        pw.SizedBox(height: 6),
-
-        // Header row
-        pw.Row(children: [
-          pw.Expanded(child: pw.Text('Item', style: const pw.TextStyle(fontSize: 9))),
-          pw.Text('Qty', style: const pw.TextStyle(fontSize: 9)),
-        ]),
+        pw.Text(List.filled(48, '-').join(), style: text8),
         pw.SizedBox(height: 4),
-        pw.Text('-' * 32, style: const pw.TextStyle(fontSize: 8)),
-        pw.SizedBox(height: 6),
 
-        // Items
-        ...((data['items'] as List).map((item) {
-          final category = (item['category'] ?? '').toString();
-          final name = (item['name'] ?? '').toString();
-          final qty = (item['quantity'] ?? 0).toString();
-          final left = category.isNotEmpty ? '$category - $name' : name;
-          return pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(vertical: 2),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Expanded(child: pw.Text(left, style: const pw.TextStyle(fontSize: 9))),
-                pw.SizedBox(width: 28, child: pw.Text(qty, textAlign: pw.TextAlign.right, style: const pw.TextStyle(fontSize: 9))),
-              ],
-            ),
-          );
-        })),
+        if (items.isEmpty)
+          pw.Text('No items', style: text8)
+        else
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: items.map((item) {
+              final name = (item['name'] ?? '').toString();
+              final qty = (item['qty'] ?? item['quantity'] ?? 0).toString();
+              final note = (item['note'] ?? '').toString();
+              return pw.Padding(
+                padding: const pw.EdgeInsets.only(bottom: 2),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Expanded(child: pw.Text(name, style: text8, maxLines: 2, overflow: pw.TextOverflow.clip)),
+                        pw.SizedBox(width: 6),
+                        pw.Text(qty, style: text8),
+                      ],
+                    ),
+                    if (note.isNotEmpty) pw.Padding(padding: const pw.EdgeInsets.only(top: 2), child: pw.Text(note, style: text8)),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
 
         pw.SizedBox(height: 6),
-        pw.Text('-' * 32, style: const pw.TextStyle(fontSize: 8)),
-        pw.SizedBox(height: 8),
-        pw.Center(child: pw.Text('ShreeRajmandir POS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))),
-        pw.SizedBox(height: 8),
+        pw.Text(List.filled(48, '-').join(), style: text8),
+
+        pw.Spacer(),
+
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('Stew: $steward', style: footerBold6),
+            pw.Text(dateStr, style: footerBold6),
+          ],
+        ),
       ],
     ),
   );
 
-  final bytes = await doc.save();
-  final outFile = File(outputPath);
-  await outFile.create(recursive: true);
-  await outFile.writeAsBytes(bytes);
-  print('Wrote KOT preview to: $outputPath');
+  return doc.save();
+}
+
+// CLI runner
+Future<void> main() async {
+  final sample = [
+    {'name': 'Paneer Butter Masala', 'qty': 2},
+    {'name': 'Garlic Naan (butter)', 'qty': 4},
+    {'name': 'Jeera Rice', 'qty': 1},
+  ];
+
+  final bytes = await generateKotPreviewPdf(kotNumber: '000123', tableNumber: 'T12', stewardRaw: 'John Doe', items: sample);
+  final out = File('build/kot_preview.pdf');
+  out.createSync(recursive: true);
+  out.writeAsBytesSync(bytes);
+  print('Wrote build/kot_preview.pdf');
 }

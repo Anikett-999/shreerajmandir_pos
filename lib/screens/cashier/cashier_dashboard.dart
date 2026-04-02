@@ -1138,9 +1138,11 @@ class _CashierDashboardState extends State<CashierDashboard> {
         'tableName': orderData['tableName'],
         'items': [{
           'name': item['name'],
+          'category': item['category'] ?? '',
           'quantity': change,
           'price': item['price'],
         }],
+        'printerName': auth.currentUser?.displayName ?? auth.currentUser?.email?.split('@')[0] ?? '',
       };
       await ReportService.printKOT(kotData, orderId);
 
@@ -1683,10 +1685,12 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                       'items': [
                                         {
                                           'name': data['name'],
+                                          'category': data['category'] ?? '',
                                           'quantity': 1,
                                           'price': (data['price'] as num).toDouble(),
                                         }
                                       ],
+                                      'printerName': auth.currentUser?.displayName ?? auth.currentUser?.email?.split('@')[0] ?? '',
                                     };
                                     await ReportService.printKOT(kotData, orderId);
 

@@ -1,7 +1,6 @@
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'debug_logger.dart';
@@ -119,77 +118,85 @@ class ReportService {
 
     final pdf = pw.Document();
     final items = (data['items'] as List?) ?? [];
+    // Use default PDF fonts (avoid PdfGoogleFonts to prevent embedded ad text)
 
-    final roboto = await PdfGoogleFonts.robotoRegular();
-    final robotoBold = await PdfGoogleFonts.robotoBold();
-    final theme = pw.ThemeData.withFont(base: roboto, bold: robotoBold);
-
-    // Steward formatting helper
+    // Steward formatting helper: remove spaces, uppercase, truncate to 5 chars
     String _formatStewardName(String? raw) {
       if (raw == null) return '';
-      final t = raw.trim();
-      if (t.length > 5) return t.substring(0, 5).toUpperCase();
-      return t.toUpperCase();
+      final cleaned = raw.replaceAll(RegExp(r'\s+'), '');
+      final up = cleaned.toUpperCase();
+      if (up.length > 5) return up.substring(0, 5);
+      return up;
     }
 
-    final steward = _formatStewardName(data['waiterName']?.toString() ?? data['steward']?.toString());
+    // Prefer caller-provided printer name (data['printerName']) else fallback
+    final steward = _formatStewardName(
+      data['printerName']?.toString() ?? data['waiterName']?.toString() ?? data['steward']?.toString(),
+    );
 
     // Date formatting: use createdAt if present
     final date = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
     final dateStr = DateFormat('dd-MMM-yyyy HH:mm:ss').format(date);
 
+    // Styles per user request: KOT & TABLE bold size 8, all other text size 8, footer size 6 bold
+    final pw.TextStyle headerBold8 = pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold);
+    final pw.TextStyle text8 = pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.normal);
+    final pw.TextStyle footerBold6 = pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold);
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: _mm58Format,
         margin: const pw.EdgeInsets.all(6),
-        theme: theme,
         build: (pw.Context context) => [
-          // Header
-          pw.Center(child: pw.Text('KOT', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 22))),
-          pw.SizedBox(height: 6),
-          pw.Center(child: pw.Text(dateStr, style: const pw.TextStyle(fontSize: 9))),
-          pw.SizedBox(height: 8),
-          pw.Center(child: pw.Text('TABLE ${data['tableName']}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12))),
-          pw.SizedBox(height: 4),
-          pw.Center(child: pw.Text('Steward: ${steward}', style: const pw.TextStyle(fontSize: 9))),
-          pw.SizedBox(height: 6),
-          pw.Text('-' * 32, style: const pw.TextStyle(fontSize: 8)),
+          // Header: KOT | date
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('KOT', style: headerBold8),
+              pw.Text(dateStr, style: text8),
+            ],
+          ),
           pw.SizedBox(height: 6),
 
-          // Header row
-          pw.Row(children: [
-            pw.Expanded(child: pw.Text('Item', style: const pw.TextStyle(fontSize: 9))),
-            pw.Text('Qty', style: const pw.TextStyle(fontSize: 9)),
-          ]),
-          pw.SizedBox(height: 4),
-          pw.Text('-' * 32, style: const pw.TextStyle(fontSize: 8)),
+          // Table and Steward on same line: TABLE 1 | ANIKE
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('TABLE ${data['tableName']}', style: headerBold8),
+              pw.Text(steward, style: headerBold8),
+            ],
+          ),
           pw.SizedBox(height: 6),
 
-          // Items
+          // Full-width dashed divider
+          pw.Text(List.filled(58, '-').join(), style: text8),
+          pw.SizedBox(height: 6),
+
+          // Items: Category-Name  (qty right-aligned)
           ...items.map((item) {
-            final qty = (item['quantity'] ?? 0).toString();
+            final qty = (item['quantity'] ?? item['qty'] ?? 0).toString();
             final category = (item['category'] ?? item['cat'] ?? '').toString();
             final name = (item['name'] ?? item['itemName'] ?? '').toString();
-            final left = (category.isNotEmpty ? '${category} - ${name}' : name);
+            final left = category.isNotEmpty ? '${category.trim()}-${name.trim()}' : name.trim();
             return pw.Padding(
               padding: const pw.EdgeInsets.symmetric(vertical: 2),
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Expanded(child: pw.Text(left, style: const pw.TextStyle(fontSize: 9))),
-                  pw.SizedBox(width: 28, child: pw.Text(qty, textAlign: pw.TextAlign.right, style: const pw.TextStyle(fontSize: 9))),
+                  pw.Expanded(child: pw.Text(left, style: text8, maxLines: 2)),
+                  pw.SizedBox(width: 24, child: pw.Text(qty, textAlign: pw.TextAlign.right, style: text8)),
                 ],
               ),
             );
-          }),
+          }).toList(),
 
           pw.SizedBox(height: 6),
-          pw.Text('-' * 32, style: const pw.TextStyle(fontSize: 8)),
-          pw.SizedBox(height: 8),
+          pw.Text(List.filled(48, '-').join(), style: text8),
+          pw.SizedBox(height: 6),
 
           // Footer
-          pw.Center(child: pw.Text('ShreeRajmandir POS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))),
-          pw.SizedBox(height: 8),
+          pw.Text('ShreeRajmandir POS', style: footerBold6),
+          pw.SizedBox(height: 6),
         ],
       ),
     );
