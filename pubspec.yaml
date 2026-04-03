@@ -77,6 +77,8 @@ flutter:
     - assets/branding/log-bg.png
     - assets/branding/splash_logo.png
     - assets/branding/splash_logo_centered.png
+    - assets/fonts/NotoSans-Regular.ttf
+    - assets/fonts/NotoSans-Bold.ttf
 
 flutter_launcher_icons:
   android: true

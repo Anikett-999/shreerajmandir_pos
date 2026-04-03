@@ -538,6 +538,10 @@ class _CashierTablesTabState extends State<CashierTablesTab> {
         return;
       }
 
+      try {
+        final receipt = await ReportService.ensureReceiptNumberForOrder(orderDoc.id);
+        orderData['receiptNumber'] = receipt;
+      } catch (e) {}
       await ReportService.printOrderReceipt(orderData, orderDoc.id);
 
       if (mounted) {
@@ -575,9 +579,13 @@ class _CashierTablesTabState extends State<CashierTablesTab> {
             return;
           }
 
-          if (printBill) {
-            await ReportService.printOrderReceipt(orderData, orderDoc.id);
-          }
+            if (printBill) {
+              try {
+                final receipt = await ReportService.ensureReceiptNumberForOrder(orderDoc.id);
+                orderData['receiptNumber'] = receipt;
+              } catch (e) {}
+              await ReportService.printOrderReceipt(orderData, orderDoc.id);
+            }
 
           if (currentStatus == 'served') {
             final auth = context.read<AuthService>();

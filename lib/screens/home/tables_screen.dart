@@ -25,7 +25,10 @@ class _TablesScreenState extends State<TablesScreen> {
   @override
   void initState() {
     super.initState();
-    _kotService.startListening();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final restaurantId = context.read<AuthService>().restaurantId;
+      _kotService.startListening(restaurantId);
+    });
   }
 
   @override
@@ -77,7 +80,7 @@ class _TablesScreenState extends State<TablesScreen> {
             const Spacer(),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Logout', style: TextStyle(color: Colors.red)),
+              title: const Text('Logout', style: TextStyle(color: Colors.white)),
               onTap: () async {
                 final confirm = await showDialog<bool>(
                   context: context,

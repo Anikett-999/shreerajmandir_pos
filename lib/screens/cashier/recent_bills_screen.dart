@@ -66,13 +66,17 @@ class _RecentBillsScreenState extends State<RecentBillsScreen> {
   }
 
   Future<void> _openBillPreview(Map<String, dynamic> data, String orderId) async {
-    final billNo = (data['receiptNumber']?.toString().isNotEmpty ?? false)
-        ? data['receiptNumber'].toString().padLeft(6, '0')
-        : orderId.substring(0, 6).toUpperCase();
+    // Ensure persistent receipt number exists before printing
+    try {
+      final receipt = await ReportService.ensureReceiptNumberForOrder(orderId);
+      data['receiptNumber'] = receipt;
+    } catch (e) {
+      // ignore and proceed with whatever data we have
+    }
 
     await ReportService.printFinalBill(
       orderData: data,
-      orderId: billNo,
+      orderId: orderId,
       subtotal: (data['subtotal'] ?? data['totalAmount'] ?? 0.0).toDouble(),
       cgst: (data['cgst'] ?? 0.0).toDouble(),
       sgst: (data['sgst'] ?? 0.0).toDouble(),

@@ -500,8 +500,10 @@ class _CashierDashboardState extends State<CashierDashboard> {
               
               // Filter and Sort in memory to avoid needing a complex composite index
               final kots = snapshot.data!.docs.where((doc) {
-                final status = (doc.data() as Map<String, dynamic>)['status'] ?? 'Pending';
-                return status != 'Served';
+                final rawStatus = (doc.data() as Map<String, dynamic>)['status'] ?? '';
+                final status = OrderStatusUtils.normalizeStatus(rawStatus.toString());
+                // show all non-closed KOTs for cashier; normalized values used
+                return status != 'served' && status != 'closed';
               }).toList();
 
               // Sort by createdAt descending
@@ -527,7 +529,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 itemBuilder: (context, index) {
                   final kot = kots[index];
                   final data = kot.data() as Map<String, dynamic>;
-                  return _buildKotCard(kot.id, data);
+                    return _buildKotCard(kot.id, data);
                 },
               );
             },
@@ -540,8 +542,9 @@ class _CashierDashboardState extends State<CashierDashboard> {
   Widget _buildKotCard(String id, Map<String, dynamic> data) {
     final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
     final timeStr = DateFormat('hh:mm a').format(createdAt);
-    final status = data['status'] ?? 'Pending';
-    
+    final rawStatus = data['status'] ?? '';
+    final status = OrderStatusUtils.normalizeStatus(rawStatus.toString());
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -551,7 +554,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: status == 'Preparing' ? Colors.orange[50] : Colors.blue[50],
+              color: status == 'preparing' ? Colors.orange[50] : Colors.blue[50],
               borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
             ),
             child: Row(
@@ -564,41 +567,33 @@ class _CashierDashboardState extends State<CashierDashboard> {
           ),
           Padding(
             padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                ...(data['items'] as List).map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text("• ${item['name']} x ${item['quantity']}", style: const TextStyle(fontSize: 14)),
-                )),
-                const Divider(),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text("By: ${data['waiterName']}", style: TextStyle(color: Colors.grey[600], fontSize: 11, fontStyle: FontStyle.italic), overflow: TextOverflow.ellipsis),
+                Expanded(child: Text(data['notes']?.toString() ?? '', style: TextStyle(color: Colors.grey[700]))),
+                GestureDetector(
+                  onTap: () async {
+                    // Use normalized status transitions consistent with kitchen
+                    String nextStatus = status;
+                    if (status == 'placed' || status == 'pending') nextStatus = 'preparing';
+                    else if (status == 'preparing') nextStatus = 'prepared';
+
+                    if (nextStatus != status) {
+                      try {
+                        await FirebaseFirestore.instance.collection('kots').doc(id).update({'status': nextStatus, 'updatedAt': FieldValue.serverTimestamp()});
+                      } catch (_) {}
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: status == 'placed' || status == 'pending'
+                          ? Colors.blue
+                          : (status == 'preparing' ? Colors.orange : Colors.green),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () {
-                        String nextStatus = status;
-                        if (status == 'Pending') nextStatus = 'Preparing';
-                        else if (status == 'Preparing') nextStatus = 'Done';
-                        
-                        if (nextStatus != status) {
-                          FirebaseFirestore.instance.collection('kots').doc(id).update({'status': nextStatus});
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: status == 'Pending' ? Colors.blue : (status == 'Preparing' ? Colors.orange : Colors.green),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(status.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
+                    child: Text(status.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                  ),
                 ),
               ],
             ),
@@ -882,16 +877,18 @@ class _CashierDashboardState extends State<CashierDashboard> {
     );
   }
 
-  void _reprintBill(String orderId, Map<String, dynamic> data) {
-    String billNo = orderId.substring(0, 6).toUpperCase();
-    if (data.containsKey('receiptNumber')) {
-      billNo = data['receiptNumber'].toString().padLeft(6, '0');
-      data['receiptNumber'] = data['receiptNumber']; // Ensure it's available in data for the template if needed
+  void _reprintBill(String orderId, Map<String, dynamic> data) async {
+    // Ensure persistent receipt number exists before reprinting
+    try {
+      final receipt = await ReportService.ensureReceiptNumberForOrder(orderId);
+      data['receiptNumber'] = receipt;
+    } catch (e) {
+      // ignore and proceed
     }
 
-    ReportService.printFinalBill(
+    await ReportService.printFinalBill(
       orderData: data,
-      orderId: billNo,
+      orderId: orderId,
       subtotal: (data['subtotal'] ?? 0.0).toDouble(),
       cgst: (data['cgst'] ?? 0.0).toDouble(),
       sgst: (data['sgst'] ?? 0.0).toDouble(),
@@ -1157,7 +1154,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
           'quantity': change,
         }],
         'waiterName': 'Cashier Overlay',
-        'status': 'Pending',
+        'status': 'placed',
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -1704,7 +1701,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                         {'name': data['name'], 'quantity': 1}
                                       ],
                                       'waiterName': 'Cashier',
-                                      'status': 'Pending',
+                                      'status': 'placed',
                                       'createdAt': FieldValue.serverTimestamp(),
                                     });
 

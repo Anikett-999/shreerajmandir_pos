@@ -55,79 +55,111 @@ class _TablesTabState extends State<TablesTab> {
           return aName.toLowerCase().compareTo(bName.toLowerCase());
         });
 
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                   DropdownButtonHideUnderline(
-                     child: Container(
-                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                       decoration: BoxDecoration(
-                         border: Border.all(color: _brandMaroon.withOpacity(0.35)),
-                         borderRadius: BorderRadius.circular(10),
+        // Build a list of tables then prefetch order statuses for active orders
+        // so we can apply the selected order-status filter before rendering.
+
+        // Extract all currentOrderId values (unique, non-null)
+        final orderIds = tables
+            .map((d) => (d.data() as Map<String, dynamic>)['currentOrderId']?.toString())
+            .where((id) => id != null && id.isNotEmpty)
+            .cast<String>()
+            .toSet()
+            .toList();
+
+        return FutureBuilder<Map<String, String>>(
+          future: _fetchOrderStatusMap(orderIds),
+          builder: (context, statusSnap) {
+            if (orderIds.isNotEmpty && !statusSnap.hasData) return const Center(child: CircularProgressIndicator());
+            final orderStatusMap = statusSnap.data ?? <String, String>{};
+
+            // Apply filter to tables (if any)
+            final filteredTables = (_selectedFilter == 'all')
+                ? tables
+                : tables.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final currentOrderId = data['currentOrderId']?.toString();
+                    final statusToCheck = (currentOrderId != null && orderStatusMap.containsKey(currentOrderId))
+                        ? orderStatusMap[currentOrderId]!
+                        : (data['status']?.toString() ?? TableStatus.available.name);
+                    return statusToCheck == _selectedFilter;
+                  }).toList();
+
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                       DropdownButtonHideUnderline(
+                         child: Container(
+                           padding: const EdgeInsets.symmetric(horizontal: 12),
+                           decoration: BoxDecoration(
+                             border: Border.all(color: _brandMaroon.withOpacity(0.35)),
+                             borderRadius: BorderRadius.circular(10),
+                           ),
+                           child: DropdownButton<String>(
+                             value: _selectedFilter,
+                             icon: const Icon(Icons.arrow_drop_down),
+                             items: const [
+                               DropdownMenuItem(value: 'all', child: Text('All')),
+                               DropdownMenuItem(value: 'placed', child: Text('Placed')),
+                               DropdownMenuItem(value: 'prepared', child: Text('Prepared')),
+                               DropdownMenuItem(value: 'preparing', child: Text('Preparing')),
+                               DropdownMenuItem(value: 'served', child: Text('Served')),
+                               DropdownMenuItem(value: 'closed', child: Text('Closed')),
+                               DropdownMenuItem(value: 'cancelled', child: Text('Cancelled')),
+                             ],
+                             onChanged: (value) {
+                               if (value == null) return;
+                               setState(() => _selectedFilter = value);
+                             },
+                           ),
+                         ),
                        ),
-                       child: DropdownButton<String>(
-                         value: _selectedFilter,
-                         icon: const Icon(Icons.arrow_drop_down),
-                         items: const [
-                           DropdownMenuItem(value: 'all', child: Text('All')),
-                           DropdownMenuItem(value: 'placed', child: Text('Placed')),
-                           DropdownMenuItem(value: 'prepared', child: Text('Prepared')),
-                           DropdownMenuItem(value: 'preparing', child: Text('Preparing')),
-                           DropdownMenuItem(value: 'served', child: Text('Served')),
-                           DropdownMenuItem(value: 'closed', child: Text('Closed')),
-                           DropdownMenuItem(value: 'cancelled', child: Text('Cancelled')),
-                         ],
-                         onChanged: (value) {
-                           if (value == null) return;
-                           setState(() => _selectedFilter = value);
-                         },
+                       ElevatedButton.icon(
+                         onPressed: () => _showTableDialog(restaurantId: restaurantId),
+                         icon: const Icon(Icons.add, size: 16),
+                         label: const Text("Create Table", style: TextStyle(fontSize: 12)),
+                         style: ElevatedButton.styleFrom(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                         ),
                        ),
-                     ),
-                   ),
-                   ElevatedButton.icon(
-                     onPressed: () => _showTableDialog(restaurantId: restaurantId),
-                     icon: const Icon(Icons.add, size: 16),
-                     label: const Text("Create Table", style: TextStyle(fontSize: 12)),
-                     style: ElevatedButton.styleFrom(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                     ),
-                   ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final gridWidth = constraints.maxWidth;
-                  final isMobile = gridWidth < 600;
-                  final crossAxis = isMobile ? 2 : (gridWidth < 900 ? 4 : 6);
-                  
-                  return GridView.builder(
-                    padding: const EdgeInsets.all(8),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxis, 
-                      crossAxisSpacing: 6, 
-                      mainAxisSpacing: 6,
-                      // Slightly taller mobile cards prevent action-button overflow.
-                      childAspectRatio: isMobile ? 0.80 : 1.0,
-                    ),
-                    itemCount: tables.length,
-                    itemBuilder: (context, index) {
-                      final table = TableModel.fromMap(tables[index].id, tables[index].data() as Map<String, dynamic>);
-                      final isOccupied = table.status == TableStatus.occupied || table.status == TableStatus.kotSent || table.status == TableStatus.billRequested;
-                      final String? orderId = table.currentOrderId;
-                      
-                      return _buildAdminTableCard(table, isOccupied, orderId ?? '', isMobile, restaurantId);
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final gridWidth = constraints.maxWidth;
+                      final isMobile = gridWidth < 600;
+                      final crossAxis = isMobile ? 2 : (gridWidth < 900 ? 4 : 6);
+
+                      return GridView.builder(
+                        padding: const EdgeInsets.all(8),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxis,
+                          crossAxisSpacing: 6,
+                          mainAxisSpacing: 6,
+                          // Slightly taller mobile cards prevent action-button overflow.
+                          childAspectRatio: isMobile ? 0.80 : 1.0,
+                        ),
+                        itemCount: filteredTables.length,
+                        itemBuilder: (context, index) {
+                          final doc = filteredTables[index];
+                          final table = TableModel.fromMap(doc.id, doc.data() as Map<String, dynamic>);
+                          final isOccupied = table.status == TableStatus.occupied || table.status == TableStatus.kotSent || table.status == TableStatus.billRequested;
+                          final String? orderId = table.currentOrderId;
+
+                          return _buildAdminTableCard(table, isOccupied, orderId ?? '', isMobile, restaurantId);
+                        },
+                      );
                     },
-                  );
-                },
-              ),
-            ),
-          ],
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -570,6 +602,13 @@ class _TablesTabState extends State<TablesTab> {
         return;
       }
 
+      // Ensure a receipt number is allocated and persisted, then print
+      try {
+        final receipt = await ReportService.ensureReceiptNumberForOrder(orderDoc.id);
+        orderData['receiptNumber'] = receipt;
+      } catch (e) {
+        // best-effort: continue to print even if allocation fails
+      }
       await ReportService.printOrderReceipt(orderData, orderDoc.id);
 
       if (mounted) {
@@ -721,7 +760,13 @@ class _TablesTabState extends State<TablesTab> {
             return;
           }
 
-          if (printBill) await ReportService.printOrderReceipt(orderData, orderDoc.id);
+          if (printBill) {
+            try {
+              final receipt = await ReportService.ensureReceiptNumberForOrder(orderDoc.id);
+              orderData['receiptNumber'] = receipt;
+            } catch (e) {}
+            await ReportService.printOrderReceipt(orderData, orderDoc.id);
+          }
 
           if (currentStatus == 'served') {
             final auth = context.read<AuthService>();
@@ -873,5 +918,28 @@ class _TablesTabState extends State<TablesTab> {
     final match = RegExp(r'\d+').firstMatch(value);
     if (match == null) return null;
     return int.tryParse(match.group(0)!);
+  }
+
+  // Fetch order status map for a list of orderIds. Handles batching (<=10)
+  Future<Map<String, String>> _fetchOrderStatusMap(List<String> orderIds) async {
+    final Map<String, String> result = {};
+    if (orderIds.isEmpty) return result;
+
+    // chunk into batches of 10
+    for (var i = 0; i < orderIds.length; i += 10) {
+      final end = (i + 10 < orderIds.length) ? i + 10 : orderIds.length;
+      final batch = orderIds.sublist(i, end);
+      try {
+        final snap = await _firestore.collection('orders').where(FieldPath.documentId, whereIn: batch).get();
+        for (final doc in snap.docs) {
+          final raw = doc.data()['status']?.toString() ?? '';
+          result[doc.id] = OrderStatusUtils.normalizeStatus(raw);
+        }
+      } catch (e) {
+        // best-effort: skip failures for this batch
+      }
+    }
+
+    return result;
   }
 }

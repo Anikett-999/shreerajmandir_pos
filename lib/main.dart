@@ -12,7 +12,7 @@ import 'screens/admin/admin_dashboard.dart';
 import 'screens/cashier/cashier_dashboard.dart';
 import 'screens/home/tables_screen.dart';
 import 'screens/auth/unauthorized_screen.dart';
-import 'screens/kot/kot_tracking_screen.dart';
+import 'screens/kot/kot_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -124,7 +124,7 @@ class AuthWrapper extends StatelessWidget {
           } else if (auth.role == UserRole.waiter) {
             return const TablesScreen();
           } else if (auth.role == UserRole.kitchen) {
-            return const KotTrackingScreen();
+            return const KotScreen();
           }
           return const UnauthorizedScreen();
         }
