@@ -18,9 +18,9 @@ class ProfileDetailsScreen extends StatelessWidget {
         backgroundColor: const Color(0xFF8C0D20),
         foregroundColor: Colors.white,
       ),
-      body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>?>(
         future: uid == null
-            ? Future.value(null)
+            ? Future<DocumentSnapshot<Map<String, dynamic>>?>.value(null)
             : FirebaseFirestore.instance.collection('users').doc(uid).get(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {

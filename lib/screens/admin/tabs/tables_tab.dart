@@ -19,6 +19,9 @@ class _TablesTabState extends State<TablesTab> {
   static const Color _brandMaroon = Color(0xFF8C1026);
   static const Color _cardBackground = Color(0xFFF5E8E8); // Light maroon tint
   String _selectedFilter = 'all';
+  // Guards to prevent duplicate concurrent actions per-order and dialog save
+  final Set<String> _processingOrderIds = <String>{};
+  bool _isSavingTable = false;
 
   @override
   Widget build(BuildContext context) {
@@ -486,6 +489,8 @@ class _TablesTabState extends State<TablesTab> {
     required String orderId,
     required String targetStatus,
   }) async {
+    if (_processingOrderIds.contains(orderId)) return;
+    _processingOrderIds.add(orderId);
     try {
       final auth = context.read<AuthService>();
       final ok = await OrderStatusUtils.updateOrderStatus(
@@ -506,6 +511,8 @@ class _TablesTabState extends State<TablesTab> {
           SnackBar(content: Text("Failed to update status: $e"), backgroundColor: Colors.red),
         );
       }
+    } finally {
+      _processingOrderIds.remove(orderId);
     }
   }
 
@@ -570,17 +577,23 @@ class _TablesTabState extends State<TablesTab> {
   }
 
   Future<void> _printTableBill(TableModel table) async {
-    try {
-      final orderId = table.currentOrderId;
-      if (orderId == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("No active order found for this table.")),
-          );
-        }
-        return;
+    final orderId = table.currentOrderId;
+    if (orderId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("No active order found for this table.")),
+        );
       }
+      return;
+    }
 
+    if (_processingOrderIds.contains(orderId)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Already processing this order.")));
+      return;
+    }
+
+    _processingOrderIds.add(orderId);
+    try {
       final orderDoc = await _firestore.collection('orders').doc(orderId).get();
       if (!orderDoc.exists) {
         if (mounted) {
@@ -622,6 +635,8 @@ class _TablesTabState extends State<TablesTab> {
           SnackBar(content: Text("Failed to print bill: $e"), backgroundColor: Colors.red),
         );
       }
+    } finally {
+      _processingOrderIds.remove(orderId);
     }
   }
 
@@ -740,8 +755,16 @@ class _TablesTabState extends State<TablesTab> {
   }
 
   void _processClearTable(TableModel table, {bool printBill = false}) async {
+    final orderId = table.currentOrderId;
+    if (orderId != null) {
+      if (_processingOrderIds.contains(orderId)) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Already processing this order.")));
+        return;
+      }
+      _processingOrderIds.add(orderId);
+    }
+
     try {
-      String? orderId = table.currentOrderId;
       if (orderId != null) {
         final orderDoc = await _firestore.collection('orders').doc(orderId).get();
         if (orderDoc.exists) {
@@ -801,6 +824,8 @@ class _TablesTabState extends State<TablesTab> {
       await _firestore.collection('tables').doc(table.id).update({'status': TableStatus.available.name, 'currentOrderId': null});
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+    } finally {
+      if (orderId != null) _processingOrderIds.remove(orderId);
     }
   }
 
@@ -876,38 +901,42 @@ class _TablesTabState extends State<TablesTab> {
               child: const Text("Delete", style: TextStyle(color: Colors.red)),
             ),
           ElevatedButton(
-            onPressed: () async {
-              if (nameCtrl.text.isEmpty) return;
+            onPressed: _isSavingTable
+                ? null
+                : () async {
+                    if (nameCtrl.text.isEmpty) return;
+                    setState(() => _isSavingTable = true);
+                    final data = {
+                      'name': nameCtrl.text.trim(),
+                      'capacity': int.tryParse(capCtrl.text) ?? 4,
+                      'status': table?.status.name ?? TableStatus.available.name,
+                      'restaurantId': restaurantId,
+                    };
 
-              final data = {
-                'name': nameCtrl.text.trim(),
-                'capacity': int.tryParse(capCtrl.text) ?? 4,
-                'status': table?.status.name ?? TableStatus.available.name,
-                'restaurantId': restaurantId,
-              };
+                    try {
+                      if (table == null) {
+                        await _firestore.collection('tables').add(data);
+                      } else {
+                        await _firestore.collection('tables').doc(table.id).update(data);
+                      }
 
-              try {
-                if (table == null) {
-                  await _firestore.collection('tables').add(data);
-                } else {
-                  await _firestore.collection('tables').doc(table.id).update(data);
-                }
-
-                if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(table == null ? "Table created successfully." : "Table updated successfully.")),
-                  );
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Failed to save table: $e"), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-            child: const Text("Save"),
+                      if (mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(table == null ? "Table created successfully." : "Table updated successfully.")),
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text("Failed to save table: $e"), backgroundColor: Colors.red),
+                        );
+                      }
+                    } finally {
+                      if (mounted) setState(() => _isSavingTable = false);
+                    }
+                  },
+            child: _isSavingTable ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text("Save"),
           ),
         ],
       ),

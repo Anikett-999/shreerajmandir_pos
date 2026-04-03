@@ -174,7 +174,15 @@ class _CartViewContentState extends State<CartViewContent> {
               ),
               onPressed: _isSubmitting
                   ? null
-                  : () => _placeOrder(cart, context),
+                  : () async {
+                      if (_isSubmitting) return;
+                      setState(() => _isSubmitting = true);
+                      try {
+                        await _placeOrder(cart, context);
+                      } finally {
+                        if (mounted) setState(() => _isSubmitting = false);
+                      }
+                    },
             ),
           ),
         ],

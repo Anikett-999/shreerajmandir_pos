@@ -27,6 +27,7 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
   final TextEditingController _searchController = TextEditingController();
   final List<CartItem> _selectedItems = [];
   final Debouncer _debouncer = Debouncer(milliseconds: 1000);
+  bool _isSubmitting = false;
 
   Future<bool> _isOrderLockedForBilling({required String attemptedAction}) async {
     final orderId = widget.table.currentOrderId;
@@ -518,14 +519,16 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
               ),
               const SizedBox(height: 12),
               ElevatedButton(
-                onPressed: _selectedItems.isEmpty ? null : () => _debouncer.run(() => _submitOrder()),
+                onPressed: _selectedItems.isEmpty || _isSubmitting ? null : () => _debouncer.run(() => _submitOrder()),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green[600],
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                child: const Text("Place Order (Send KOT)", style: TextStyle(fontWeight: FontWeight.bold)),
+                child: _isSubmitting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text("Place Order (Send KOT)", style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -535,8 +538,11 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
   }
 
   void _submitOrder() async {
+     if (_isSubmitting) return;
+     setState(() => _isSubmitting = true);
      final isLocked = await _isOrderLockedForBilling(attemptedAction: 'send_kot');
      if (isLocked) {
+       setState(() => _isSubmitting = false);
        return;
      }
 
@@ -717,9 +723,13 @@ class _CommonOrderDialogState extends State<CommonOrderDialog> {
        },
      );
 
-     if (mounted) {
-       Navigator.pop(context);
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Order placed! KOT sent to kitchen."), backgroundColor: Colors.green));
+     try {
+       if (mounted) {
+         Navigator.pop(context);
+         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Order placed! KOT sent to kitchen."), backgroundColor: Colors.green));
+       }
+     } finally {
+       if (mounted) setState(() => _isSubmitting = false);
      }
   }
 }

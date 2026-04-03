@@ -308,7 +308,13 @@ class _CartPageState extends State<CartPage> {
                       onPressed: _isSubmitting || cart.items.isEmpty
                           ? null
                           : () async {
-                              await _placeOrder(cart, context);
+                              if (_isSubmitting) return;
+                              setState(() => _isSubmitting = true);
+                              try {
+                                await _placeOrder(cart, context);
+                              } finally {
+                                if (mounted) setState(() => _isSubmitting = false);
+                              }
                             },
                     ),
                   ),

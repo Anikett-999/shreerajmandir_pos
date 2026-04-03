@@ -11,6 +11,9 @@ import 'debug_logger.dart';
 enum ReportGranularity { daily, monthly, yearly }
 
 class ReportService {
+  // In-memory guard to prevent concurrent duplicate print jobs for the same order.
+  // This only prevents duplicate prints within the same app instance (process).
+  static final Set<String> _printingOrderIds = <String>{};
   static const _thermalFormat = PdfPageFormat(226.77, 100 * PdfPageFormat.cm, marginAll: 6);
   static const _mm58Format = PdfPageFormat(58 * 2.8346456693, 100 * PdfPageFormat.cm, marginAll: 6);
 
@@ -193,122 +196,132 @@ class ReportService {
     String? paymentMode,
     String? restaurantName,
   }) async {
-    final itemsRaw = orderData['items'];
-    final itemsList = (itemsRaw is List) ? itemsRaw : <dynamic>[];
+    // Prevent duplicate concurrent prints for the same order within this app process.
+    if (_printingOrderIds.contains(orderId)) {
+      DebugLogger.logEvent(event: 'printReceipt58_skipped_duplicate', data: {'orderId': orderId});
+      return;
+    }
+    _printingOrderIds.add(orderId);
+    try {
+      final itemsRaw = orderData['items'];
+      final itemsList = (itemsRaw is List) ? itemsRaw : <dynamic>[];
 
-    String receiptNumber = orderData['receiptNumber']?.toString() ?? '';
-    if (receiptNumber.isEmpty) {
-      try {
-        receiptNumber = await ensureReceiptNumberForOrder(orderId);
-      } catch (e) {
-        receiptNumber = orderId.length >= 6 ? orderId.substring(0, 6) : orderId;
+      String receiptNumber = orderData['receiptNumber']?.toString() ?? '';
+      if (receiptNumber.isEmpty) {
+        try {
+          receiptNumber = await ensureReceiptNumberForOrder(orderId);
+        } catch (e) {
+          receiptNumber = orderId.length >= 6 ? orderId.substring(0, 6) : orderId;
+        }
       }
-    }
 
-    final date = (orderData['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
-    final dateStr = _formatDateForPrint(date);
-    final steward = _formatStewardNameLocal(orderData['printerName']?.toString() ?? orderData['waiterName']?.toString() ?? orderData['steward']?.toString());
-    final table = orderData['tableName']?.toString() ?? '';
+      final date = (orderData['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+      final dateStr = _formatDateForPrint(date);
+      final steward = _formatStewardNameLocal(orderData['printerName']?.toString() ?? orderData['waiterName']?.toString() ?? orderData['steward']?.toString());
+      final table = orderData['tableName']?.toString() ?? '';
 
-    Uint8List? logoBytes;
-    try {
-      final logoFile = File(r'C:\Users\anike\Downloads\ShreeRajmandir\assets\branding\splash_logo.png');
-      if (logoFile.existsSync()) logoBytes = logoFile.readAsBytesSync();
-    } catch (_) {
-      logoBytes = null;
-    }
-
-    // Attempt to load Noto Sans fonts from assets for rupee glyph support.
-    pw.ThemeData theme;
-    try {
-      ByteData regBd;
-      ByteData boldBd;
+      Uint8List? logoBytes;
       try {
-        // Preferred: load via rootBundle (works in Flutter runtime)
-        regBd = await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
-        boldBd = await rootBundle.load('assets/fonts/NotoSans-Bold.ttf');
+        final logoFile = File(r'C:\Users\anike\Downloads\ShreeRajmandir\assets\branding\splash_logo.png');
+        if (logoFile.existsSync()) logoBytes = logoFile.readAsBytesSync();
       } catch (_) {
-        // Fallback: read from filesystem (works for Dart CLI preview generator)
-        final regBytes = File('assets/fonts/NotoSans-Regular.ttf').readAsBytesSync();
-        final boldBytes = File('assets/fonts/NotoSans-Bold.ttf').readAsBytesSync();
-        regBd = ByteData.view(regBytes.buffer);
-        boldBd = ByteData.view(boldBytes.buffer);
+        logoBytes = null;
       }
 
-      final baseFont = pw.Font.ttf(regBd);
-      final boldFont = pw.Font.ttf(boldBd);
-      theme = pw.ThemeData.withFont(base: baseFont, bold: boldFont);
-      _pdfFontAvailable = true;
-    } catch (e) {
-      DebugLogger.logEvent(event: 'printReceipt58_font_load_failed', data: {'error': e.toString()});
-      theme = pw.ThemeData();
-      _pdfFontAvailable = false;
-    }
+      // Attempt to load Noto Sans fonts from assets for rupee glyph support.
+      pw.ThemeData theme;
+      try {
+        ByteData regBd;
+        ByteData boldBd;
+        try {
+          // Preferred: load via rootBundle (works in Flutter runtime)
+          regBd = await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
+          boldBd = await rootBundle.load('assets/fonts/NotoSans-Bold.ttf');
+        } catch (_) {
+          // Fallback: read from filesystem (works for Dart CLI preview generator)
+          final regBytes = File('assets/fonts/NotoSans-Regular.ttf').readAsBytesSync();
+          final boldBytes = File('assets/fonts/NotoSans-Bold.ttf').readAsBytesSync();
+          regBd = ByteData.view(regBytes.buffer);
+          boldBd = ByteData.view(boldBytes.buffer);
+        }
 
-    final pdf = pw.Document();
+        final baseFont = pw.Font.ttf(regBd);
+        final boldFont = pw.Font.ttf(boldBd);
+        theme = pw.ThemeData.withFont(base: baseFont, bold: boldFont);
+        _pdfFontAvailable = true;
+      } catch (e) {
+        DebugLogger.logEvent(event: 'printReceipt58_font_load_failed', data: {'error': e.toString()});
+        theme = pw.ThemeData();
+        _pdfFontAvailable = false;
+      }
 
-    const int maxItemChars = 20;
-    const double qtyWidth = 18;
-    const double amtWidth = 36;
+      final pdf = pw.Document();
 
-    pdf.addPage(pw.MultiPage(
-      pageFormat: _mm58Format,
-      theme: theme,
-      margin: const pw.EdgeInsets.all(6),
-      build: (pw.Context ctx) => [
-        if (logoBytes != null) pw.Center(child: pw.Image(pw.MemoryImage(logoBytes), width: (_mm58Format.width - 12) * 0.6)),
-        pw.SizedBox(height: 4),
-        pw.Center(child: pw.Text('7947151577', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-        pw.SizedBox(height: 6),
+      const int maxItemChars = 20;
+      const double qtyWidth = 18;
+      const double amtWidth = 36;
 
-        pw.Text('Bill No: $receiptNumber', style: const pw.TextStyle(fontSize: 8)),
-        pw.Text('Date: $dateStr', style: const pw.TextStyle(fontSize: 8)),
-        pw.SizedBox(height: 4),
-        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Table: $table', style: const pw.TextStyle(fontSize: 8)), pw.Text(steward, style: const pw.TextStyle(fontSize: 8))]),
-        pw.SizedBox(height: 6),
-        pw.Divider(),
-
-        ...itemsList.map((rawItem) {
-          final item = (rawItem is Map) ? Map<String, dynamic>.from(rawItem) : <String, dynamic>{};
-          final qty = _toInt(item['quantity'] ?? item['qty']).toString();
-          final category = (item['category'] ?? item['cat'])?.toString() ?? '';
-          final name = (item['name'] ?? item['itemName'] ?? '').toString();
-          final left = (category.isNotEmpty) ? '${category.trim()}-${name.trim()}' : name.trim();
-          var leftSafe = left.replaceAll(RegExp(r'\s+'), ' ');
-          if (leftSafe.length > maxItemChars) leftSafe = leftSafe.substring(0, maxItemChars);
-          final price = _toDouble(item['price']);
-          final lineAmount = price * _toDouble(item['quantity'] ?? item['qty'] ?? 0);
-
-          return pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(vertical: 1),
-            child: pw.Row(children: [
-              pw.Expanded(child: pw.Text(leftSafe, style: const pw.TextStyle(fontSize: 8), maxLines: 1, overflow: pw.TextOverflow.clip)),
-              pw.SizedBox(width: qtyWidth, child: pw.Text(qty, style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.right)),
-              pw.SizedBox(width: amtWidth, child: pw.Text(_formatAmount(lineAmount), style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.right)),
-            ]),
-          );
-        }).toList(),
-
-        pw.SizedBox(height: 6),
-        pw.Divider(),
-
-        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('TOTAL', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)), pw.Text(_formatAmount(totalOverride ?? itemsList.fold<double>(0.0, (s, it) { final m = (it is Map) ? it : <String,dynamic>{}; return s + (_toDouble((m as Map)['price']) * _toDouble((m)['quantity'] ?? (m)['qty'] ?? 0)); })), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))]),
-
-        pw.Divider(),
-
-        if (!isKOT) ...[
+      pdf.addPage(pw.MultiPage(
+        pageFormat: _mm58Format,
+        theme: theme,
+        margin: const pw.EdgeInsets.all(6),
+        build: (pw.Context ctx) => [
+          if (logoBytes != null) pw.Center(child: pw.Image(pw.MemoryImage(logoBytes), width: (_mm58Format.width - 12) * 0.6)),
+          pw.SizedBox(height: 4),
+          pw.Center(child: pw.Text('7947151577', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
           pw.SizedBox(height: 6),
-          pw.Center(child: pw.Text('Thank You Visit Again', style: const pw.TextStyle(fontSize: 8))),
-          pw.Center(child: pw.Text('@rajmandir_icecream_latur', style: const pw.TextStyle(fontSize: 8))),
-          pw.Center(child: pw.Text('ShreeRajmandir POS', style: const pw.TextStyle(fontSize: 7))),
+
+          pw.Text('Bill No: $receiptNumber', style: const pw.TextStyle(fontSize: 8)),
+          pw.Text('Date: $dateStr', style: const pw.TextStyle(fontSize: 8)),
+          pw.SizedBox(height: 4),
+          pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Table: $table', style: const pw.TextStyle(fontSize: 8)), pw.Text(steward, style: const pw.TextStyle(fontSize: 8))]),
           pw.SizedBox(height: 6),
+          pw.Divider(),
+
+          ...itemsList.map((rawItem) {
+            final item = (rawItem is Map) ? Map<String, dynamic>.from(rawItem) : <String, dynamic>{};
+            final qty = _toInt(item['quantity'] ?? item['qty']).toString();
+            final category = (item['category'] ?? item['cat'])?.toString() ?? '';
+            final name = (item['name'] ?? item['itemName'] ?? '').toString();
+            final left = (category.isNotEmpty) ? '${category.trim()}-${name.trim()}' : name.trim();
+            var leftSafe = left.replaceAll(RegExp(r'\s+'), ' ');
+            if (leftSafe.length > maxItemChars) leftSafe = leftSafe.substring(0, maxItemChars);
+            final price = _toDouble(item['price']);
+            final lineAmount = price * _toDouble(item['quantity'] ?? item['qty'] ?? 0);
+
+            return pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 1),
+              child: pw.Row(children: [
+                pw.Expanded(child: pw.Text(leftSafe, style: const pw.TextStyle(fontSize: 8), maxLines: 1, overflow: pw.TextOverflow.clip)),
+                pw.SizedBox(width: qtyWidth, child: pw.Text(qty, style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.right)),
+                pw.SizedBox(width: amtWidth, child: pw.Text(_formatAmount(lineAmount), style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.right)),
+              ]),
+            );
+          }).toList(),
+
+          pw.SizedBox(height: 6),
+          pw.Divider(),
+
+          pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('TOTAL', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)), pw.Text(_formatAmount(totalOverride ?? itemsList.fold<double>(0.0, (s, it) { final m = (it is Map) ? it : <String,dynamic>{}; return s + (_toDouble((m as Map)['price']) * _toDouble((m)['quantity'] ?? (m)['qty'] ?? 0)); })), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10))]),
+
+          pw.Divider(),
+
+          if (!isKOT) ...[
+            pw.SizedBox(height: 6),
+            pw.Center(child: pw.Text('Thank You Visit Again', style: const pw.TextStyle(fontSize: 8))),
+            pw.Center(child: pw.Text('@rajmandir_icecream_latur', style: const pw.TextStyle(fontSize: 8))),
+            pw.Center(child: pw.Text('ShreeRajmandir POS', style: const pw.TextStyle(fontSize: 7))),
+            pw.SizedBox(height: 6),
+          ],
         ],
-      ],
-    ));
+      ));
 
-    DebugLogger.logEvent(event: 'printReceipt58_before_layout', data: {'orderId': orderId, 'receiptNumber': receiptNumber, 'isKOT': isKOT});
-    await Printing.layoutPdf(onLayout: (_) async => pdf.save(), format: _mm58Format);
-    DebugLogger.logEvent(event: 'printReceipt58_complete', data: {'orderId': orderId, 'receiptNumber': receiptNumber, 'isKOT': isKOT});
+      DebugLogger.logEvent(event: 'printReceipt58_before_layout', data: {'orderId': orderId, 'receiptNumber': receiptNumber, 'isKOT': isKOT});
+      await Printing.layoutPdf(onLayout: (_) async => pdf.save(), format: _mm58Format);
+      DebugLogger.logEvent(event: 'printReceipt58_complete', data: {'orderId': orderId, 'receiptNumber': receiptNumber, 'isKOT': isKOT});
+    } finally {
+      _printingOrderIds.remove(orderId);
+    }
   }
 
   static pw.Widget _amountRow(String label, String value) => pw.Padding(
